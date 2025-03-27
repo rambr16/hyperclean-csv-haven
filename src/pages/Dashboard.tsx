@@ -107,12 +107,10 @@ const Dashboard: React.FC = () => {
         result = await processDomainOnlyCSV(
           csvData,
           mappedColumns['website'],
-          (processed, total) => {
-            const progress = processed / total;
+          (processed) => {
             updateTaskProgress(taskId, { 
-              progress, 
+              progress: processed / csvData.length, 
               processedRows: processed,
-              totalRows: total
             });
           }
         );

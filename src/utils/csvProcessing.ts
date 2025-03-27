@@ -339,7 +339,8 @@ export const processDomainOnlyCSV = async (
       
       result.push(row);
     }
-    updateProgress(chunkEnd, data.length);
+    // Fix: Pass only the processed count
+    updateProgress(chunkEnd);
   }
   
   console.log(`Domain-only processing complete: ${result.length} rows processed`);
@@ -825,10 +826,10 @@ export const processMultiEmailCSV = async (
               contact['other_dm_title'] = otherTitle;
             }
             
-            // Get email
-            contact['other_dm_email'] = nextContact[emailField] || '';
+            // Get email - Fix: Use 'email' instead of emailField
+            contact['other_dm_email'] = nextContact['email'] || '';
             
-            console.log(`Assigned other_dm_name: ${otherName} to row with email ${contact[emailField]}`);
+            console.log(`Assigned other_dm_name: ${otherName} to row with email ${contact['email']}`);
             enrichedCount++;
           }
         });
