@@ -40,6 +40,8 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     
     // Ensure other_dm_name is in the headers even if it's not in any row
     headerSet.add('other_dm_name');
+    headerSet.add('other_dm_email');
+    headerSet.add('other_dm_title');
     
     return Array.from(headerSet);
   }, [stableData]);
@@ -166,7 +168,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                   >
                     {prioritizedHeaders.map(header => {
                       // Special handling for other_dm_name to always display it
-                      if (header === 'other_dm_name') {
+                      if (header === 'other_dm_name' || header === 'other_dm_email' || header === 'other_dm_title') {
                         const value = row[header] || '';
                         
                         return (
@@ -176,7 +178,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                           >
                             {value ? (
                               <span className="flex items-center">
-                                <Users className="h-3 w-3 mr-1" />
+                                {header === 'other_dm_name' && <Users className="h-3 w-3 mr-1" />}
                                 {value}
                               </span>
                             ) : (

@@ -90,13 +90,28 @@ export const parseCSV = (csvString: string): { headers: string[], data: CSVData 
  * Convert data back to CSV string
  */
 export const dataToCSV = (headers: string[], data: CSVData): string => {
-  const headerRow = headers.join(',');
+  // Make sure to include other_dm fields in headers if not already present
+  const ensuredHeaders = [...headers];
+  const importantFields = ['other_dm_name', 'other_dm_email', 'other_dm_title'];
+  
+  for (const field of importantFields) {
+    if (!ensuredHeaders.includes(field)) {
+      ensuredHeaders.push(field);
+    }
+  }
+  
+  const headerRow = ensuredHeaders.join(',');
   const dataRows = data.map(row => {
-    return headers.map(header => {
-      const value = row[header] || '';
+    return ensuredHeaders.map(header => {
+      // Ensure all rows have values for important fields
+      if (importantFields.includes(header) && (row[header] === undefined)) {
+        row[header] = '';
+      }
+      
+      const value = row[header] !== undefined ? row[header] : '';
       // Escape commas and quotes
-      if (value.includes(',') || value.includes('"')) {
-        return `"${value.replace(/"/g, '""')}"`;
+      if (value.toString().includes(',') || value.toString().includes('"')) {
+        return `"${value.toString().replace(/"/g, '""')}"`;
       }
       return value;
     }).join(',');
@@ -327,8 +342,10 @@ export const processDomainOnlyCSV = async (
       const websiteUrl = row[websiteField] || '';
       row['cleaned_website'] = cleanWebsiteUrl(websiteUrl);
       
-      // Ensure other_dm_name exists but is empty
+      // Ensure other_dm fields exist but are empty
       row['other_dm_name'] = '';
+      row['other_dm_email'] = '';
+      row['other_dm_title'] = '';
       
       // Remove whitespace
       Object.keys(row).forEach(key => {
@@ -432,7 +449,7 @@ export const processSingleEmailCSV = async (
         }
       }
       
-      // Ensure other_dm_name always exists with null value
+      // Ensure other_dm_name always exists with empty value
       row['other_dm_name'] = '';
       row['other_dm_email'] = '';
       row['other_dm_title'] = '';
@@ -662,6 +679,11 @@ export const processMultiEmailCSV = async (
           newRow['company'] = emailData.originalRow[mappedColumns['company']];
         }
         
+        // Initialize alternative contact fields
+        newRow['other_dm_name'] = '';
+        newRow['other_dm_email'] = '';
+        newRow['other_dm_title'] = '';
+        
         expandedData.push(newRow);
       });
     }
@@ -711,6 +733,11 @@ export const processMultiEmailCSV = async (
           row['cleaned_website'] = '';
         }
       }
+      
+      // Ensure all other_dm fields exist
+      if (row['other_dm_name'] === undefined) row['other_dm_name'] = '';
+      if (row['other_dm_email'] === undefined) row['other_dm_email'] = '';
+      if (row['other_dm_title'] === undefined) row['other_dm_title'] = '';
     }
     
     updateProgress(chunkEnd, processedData.length, 'Cleaning data');
@@ -759,9 +786,12 @@ export const processMultiEmailCSV = async (
       // Filter valid contacts (have name and non-generic email)
       const validContacts = rows.filter(row => {
         const email = row['email'] || '';
-        const hasFullName = row['fullName'] && row['fullName'].trim() !== '';
-        const hasFirstAndLastName = (row['firstName'] && row['firstName'].trim() !== '') && 
-                                   (row['lastName'] && row['lastName'].trim() !== '');
+        const fullName = row['fullName'] || row['full_name'] || '';
+        const firstName = row['firstName'] || row['first_name'] || '';
+        const lastName = row['lastName'] || row['last_name'] || '';
+        const hasFullName = fullName && fullName.trim() !== '';
+        const hasFirstAndLastName = (firstName && firstName.trim() !== '') && 
+                                   (lastName && lastName.trim() !== '');
         
         // Contact must have a name and non-generic email
         return (hasFullName || hasFirstAndLastName) && !isGenericEmail(email);
@@ -776,16 +806,22 @@ export const processMultiEmailCSV = async (
           const nextIndex = (index + 1) % validContacts.length;
           const nextContact = validContacts[nextIndex];
           
-          // Get the person's full name from nextContact, NOT the company name
+          // Get the person's full name from nextContact
           let otherDmName = '';
           
           // First try to get the full name directly
           if (nextContact['fullName'] && nextContact['fullName'].trim() !== '') {
             otherDmName = nextContact['fullName'].trim();
           } 
+          else if (nextContact['full_name'] && nextContact['full_name'].trim() !== '') {
+            otherDmName = nextContact['full_name'].trim();
+          }
           // If no fullName, try concatenating first and last name
           else if (nextContact['firstName'] && nextContact['lastName']) {
             otherDmName = `${nextContact['firstName'].trim()} ${nextContact['lastName'].trim()}`;
+          }
+          else if (nextContact['first_name'] && nextContact['last_name']) {
+            otherDmName = `${nextContact['first_name'].trim()} ${nextContact['last_name'].trim()}`;
           }
           
           // Get title if available
@@ -793,10 +829,16 @@ export const processMultiEmailCSV = async (
           
           // Only set other_dm_name if we have a valid person name
           if (otherDmName && otherDmName.trim() !== '') {
-            // Make sure we're not using company name as the person's name
-            // Additional check to avoid using company names
-            if (nextContact['company'] && 
-                otherDmName.toLowerCase() === nextContact['company'].toLowerCase()) {
+            // Check if name equals company name (to avoid using company name as person name)
+            const companyName = nextContact['company'] || '';
+            const cleanedCompanyName = nextContact['cleaned_company_name'] || '';
+            
+            // Skip if name and company match (case insensitive comparison)
+            const isCompanyName = 
+              (companyName && otherDmName.toLowerCase() === companyName.toLowerCase()) ||
+              (cleanedCompanyName && otherDmName.toLowerCase() === cleanedCompanyName.toLowerCase());
+            
+            if (isCompanyName) {
               console.log(`Warning: Skipping assignment because name "${otherDmName}" matches company name`);
             } else {
               currentContact['other_dm_name'] = otherDmName;
@@ -818,6 +860,13 @@ export const processMultiEmailCSV = async (
   
   console.log(`Successfully enriched ${enrichedCount} rows with other_dm_name`);
   
+  // Final verification - ensure all rows have other_dm fields (even if empty)
+  filteredByDomain.forEach(row => {
+    if (row['other_dm_name'] === undefined) row['other_dm_name'] = '';
+    if (row['other_dm_email'] === undefined) row['other_dm_email'] = '';
+    if (row['other_dm_title'] === undefined) row['other_dm_title'] = '';
+  });
+  
   updateProgress(filteredByDomain.length, filteredByDomain.length, 'Complete');
   console.log(`Multi-email processing complete: ${filteredByDomain.length} rows in final output (from ${originalRowCount} original rows)`);
   
@@ -833,8 +882,33 @@ export const downloadCSV = (data: CSVData, filename: string): void => {
     return;
   }
   
-  const headers = Object.keys(data[0]);
-  const csvContent = dataToCSV(headers, data);
+  // Get all headers from the data
+  const allHeaders = new Set<string>();
+  
+  // First collect all unique headers across all rows
+  data.forEach(row => {
+    Object.keys(row).forEach(key => allHeaders.add(key));
+  });
+  
+  // Add critical fields if they don't exist
+  ['other_dm_name', 'other_dm_email', 'other_dm_title'].forEach(field => {
+    allHeaders.add(field);
+  });
+  
+  // Convert to array and ensure each row has all fields
+  const headers = Array.from(allHeaders);
+  const processedData = data.map(row => {
+    const newRow = {...row};
+    // Ensure all headers exist in each row
+    headers.forEach(header => {
+      if (newRow[header] === undefined) {
+        newRow[header] = '';
+      }
+    });
+    return newRow;
+  });
+  
+  const csvContent = dataToCSV(headers, processedData);
   
   // Create a blob and download link
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

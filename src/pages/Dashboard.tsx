@@ -149,6 +149,14 @@ const Dashboard: React.FC = () => {
       
       console.log(`Processing complete: ${result.length} rows in final result (from ${csvData.length} original rows)`);
       
+      // Ensure result has other_dm fields in each row
+      result = result.map(row => ({
+        ...row,
+        other_dm_name: row.other_dm_name !== undefined ? row.other_dm_name : '',
+        other_dm_email: row.other_dm_email !== undefined ? row.other_dm_email : '',
+        other_dm_title: row.other_dm_title !== undefined ? row.other_dm_title : ''
+      }));
+      
       updateTaskProgress(taskId, { 
         status: 'complete',
         progress: 1,
