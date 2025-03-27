@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
@@ -16,6 +16,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [highlightedDomain, setHighlightedDomain] = useState<string | null>(null);
   
+  // Return null early if no data to prevent unnecessary re-renders
   if (!data || data.length === 0) {
     return null;
   }
@@ -29,10 +30,10 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     'other_dm_name', 'other_dm_email', 'other_dm_title', 'mx_provider'
   ];
   
-  const prioritizedHeaders = [
+  const prioritizedHeaders = useMemo(() => [
     ...priorityHeaders.filter(h => allHeaders.includes(h)),
     ...allHeaders.filter(h => !priorityHeaders.includes(h))
-  ];
+  ], [allHeaders]);
   
   const handleDownload = () => {
     downloadCSV(data, `processed_${fileName}`);
@@ -53,7 +54,8 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     }
   };
   
-  const sortedData = React.useMemo(() => {
+  // Memoize sorted data to avoid unnecessary recalculations
+  const sortedData = useMemo(() => {
     if (!sortColumn) return data;
     
     return [...data].sort((a, b) => {
