@@ -19,7 +19,8 @@ const Dashboard: React.FC = () => {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvData, setCsvData] = useState<CSVData>([]);
   const [csvFileName, setCsvFileName] = useState('');
-  const [csvFileType, setCsvFileType] = useState<'domain-only' | 'single-email' | 'multi-email' | 'unknown'>('unknown');
+  // Updated type definition to match what's expected in ProcessingTask
+  const [csvFileType, setCsvFileType] = useState<'domain-only' | 'single-email' | 'multi-email' | null>(null);
   const [mappedColumns, setMappedColumns] = useState<Record<string, string>>({});
   const [showMapping, setShowMapping] = useState(false);
   const [previewData, setPreviewData] = useState<CSVData | null>(null);
@@ -35,7 +36,7 @@ const Dashboard: React.FC = () => {
     setCsvHeaders([]);
     setCsvData([]);
     setCsvFileName('');
-    setCsvFileType('unknown');
+    setCsvFileType(null);
     setMappedColumns({});
     setShowMapping(false);
     setPreviewData(null);
@@ -52,7 +53,9 @@ const Dashboard: React.FC = () => {
     setCsvHeaders(headers);
     setCsvData(data);
     setCsvFileName(fileName);
-    setCsvFileType(fileType);
+    
+    // Convert 'unknown' to null for type safety
+    setCsvFileType(fileType === 'unknown' ? null : fileType);
     setShowMapping(true);
     setPreviewData(null);
   };
@@ -61,6 +64,12 @@ const Dashboard: React.FC = () => {
     console.log('Columns mapped:', mappedColumns);
     setMappedColumns(mappedColumns);
     setShowMapping(false);
+    
+    // Ensure we have a valid file type before processing
+    if (!csvFileType) {
+      toast.error('Cannot process file: unknown file type');
+      return;
+    }
     
     // Start processing after mapping
     const taskId = uuidv4();

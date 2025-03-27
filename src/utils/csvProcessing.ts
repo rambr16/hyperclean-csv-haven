@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 import { getDomainFromEmail, isGenericEmail } from './auth';
 
@@ -235,9 +234,6 @@ export const getMXProvider = async (domain: string): Promise<'google' | 'microso
     return 'other';
   }
 };
-
-// Cache for MX results to avoid repeated lookups
-const mxCache: Record<string, 'google' | 'microsoft' | 'other'> = {};
 
 /**
  * Process a batch of domains to get MX records
