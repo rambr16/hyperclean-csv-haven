@@ -58,14 +58,14 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
     const sample = task.result[0];
     const columns = Object.keys(sample);
     
-    // Count how many rows have other_dm_name with values - improved check
+    // Count how many rows have other_dm_name with values
     const otherDMCount = task.result.filter(row => 
       row.other_dm_name && 
       row.other_dm_name.trim() !== '' && 
       row.other_dm_name !== undefined
     ).length;
     
-    // Find a good example of other_dm_name to display - with more thorough checking
+    // Find a good example of other_dm_name to display
     const exampleRow = task.result.find(row => 
       row.other_dm_name && 
       row.other_dm_name.trim() !== '' && 

@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 import { getDomainFromEmail, isGenericEmail } from './auth';
 
@@ -433,7 +432,7 @@ export const processSingleEmailCSV = async (
     updateProgress(chunkEnd, processedData.length, 'Cleaning data');
   }
   
-  // Stage 4: Count domain occurrences - change threshold back to 6 from 10
+  // Stage 4: Count domain occurrences - using threshold 6
   updateProgress(0, processedData.length, 'Analyzing domain frequencies');
   const domainCounts: Record<string, number> = {};
   
@@ -445,18 +444,18 @@ export const processSingleEmailCSV = async (
     }
   });
   
-  // Then filter out domains with more than 6 occurrences (changed from 10 back to 6)
+  // Then filter out domains with more than 6 occurrences
   const filteredByDomain = processedData.filter(row => {
     const domain = row['cleaned_website'];
-    return !domain || domainCounts[domain] <= 6; // Changed threshold from 10 to 6
+    return !domain || domainCounts[domain] <= 6; // Using threshold of 6
   });
   
   console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
   
-  // Stage 5: Add alternative names for duplicate domains - Fixed other_dm_name implementation
+  // Stage 5: Improved round-robin assignment for other_dm_name
   updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
   
-  // Group rows by domain more effectively
+  // Group rows by domain
   const domainMap: Record<string, CSVRow[]> = {};
   
   filteredByDomain.forEach(row => {
@@ -469,102 +468,115 @@ export const processSingleEmailCSV = async (
     }
   });
   
-  // Process domains with multiple contacts - improved to ensure other_dm_name gets populated
+  // Process domains with multiple contacts - improved round-robin implementation
   let enrichedCount = 0;
   
   Object.entries(domainMap).forEach(([domain, rows]) => {
     if (rows.length > 1) {
-      // Extract name details from rows with better field detection
-      const contactDetails = rows.map(row => {
-        let fullName = '';
-        let firstName = '';
-        let lastName = '';
-        let title = '';
+      // Extract valid contacts with names and non-generic emails
+      const validContacts = rows.filter(row => {
+        // Check for full name
+        let hasName = false;
+        let email = '';
         
-        // Try to find name from various possible fields with more thorough checking
+        // Get full name
         for (const key of Object.keys(row)) {
           const lowerKey = key.toLowerCase();
           if ((lowerKey === 'full_name' || lowerKey === 'fullname' || lowerKey === 'name') && row[key]) {
-            fullName = row[key].trim();
+            hasName = true;
             break;
           }
         }
         
-        if (!fullName) {
-          // Try to combine first_name and last_name
-          let firstNameVal = '';
-          let lastNameVal = '';
+        // Check first and last name if full name not found
+        if (!hasName) {
+          let hasFirstName = false;
+          let hasLastName = false;
           
           for (const key of Object.keys(row)) {
             const lowerKey = key.toLowerCase();
             if ((lowerKey === 'first_name' || lowerKey === 'firstname') && row[key]) {
-              firstNameVal = row[key].trim();
+              hasFirstName = true;
             }
             if ((lowerKey === 'last_name' || lowerKey === 'lastname') && row[key]) {
-              lastNameVal = row[key].trim();
+              hasLastName = true;
             }
           }
           
-          if (firstNameVal && lastNameVal) {
-            fullName = `${firstNameVal} ${lastNameVal}`;
-            firstName = firstNameVal;
-            lastName = lastNameVal;
-          }
+          hasName = hasFirstName && hasLastName;
         }
         
-        // Get title
-        for (const key of Object.keys(row)) {
-          const lowerKey = key.toLowerCase();
-          if ((lowerKey === 'title' || lowerKey === 'job_title' || lowerKey === 'jobtitle') && row[key]) {
-            title = row[key].trim();
-            break;
-          }
-        }
+        // Get email
+        email = row[emailField] || '';
         
-        return {
-          row,
-          fullName: fullName.trim(),
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          title: title.trim(),
-          email: row[emailField]
-        };
+        return hasName && email && !isGenericEmail(email);
       });
-      
-      // Filter out entries with no name or generic emails more efficiently
-      const validContacts = contactDetails.filter(contact => 
-        contact.fullName && contact.fullName.length > 0 && !isGenericEmail(contact.email)
-      );
       
       console.log(`Domain ${domain} has ${validContacts.length} valid contacts with names`);
       
-      // Skip if there aren't at least 2 valid contacts
       if (validContacts.length > 1) {
-        // Create a mapping of emails to their indices for easier reference
-        const emailToIndex = new Map<string, number>();
-        validContacts.forEach((contact, idx) => {
-          emailToIndex.set(contact.email.toLowerCase(), idx);
-        });
-        
-        // Assign other_dm_name to each row in a round-robin fashion
+        // Improved round-robin assignment
         validContacts.forEach((contact, index) => {
           // Get the next contact in the array (round-robin style)
-          const otherIndex = (index + 1) % validContacts.length;
-          const otherContact = validContacts[otherIndex];
+          const nextIndex = (index + 1) % validContacts.length;
+          const nextContact = validContacts[nextIndex];
           
-          // Add other contact's information to the row
-          contact.row['other_dm_name'] = otherContact.fullName;
+          // Get the full name from nextContact
+          let otherName = '';
           
-          // Optionally add more details about the alternative contact
-          if (otherContact.title) {
-            contact.row['other_dm_title'] = otherContact.title;
+          // Try to find name from various possible fields
+          for (const key of Object.keys(nextContact)) {
+            const lowerKey = key.toLowerCase();
+            if ((lowerKey === 'full_name' || lowerKey === 'fullname' || lowerKey === 'name') && nextContact[key]) {
+              otherName = nextContact[key].trim();
+              break;
+            }
           }
           
-          // Add the other contact's email for debugging/verification
-          contact.row['other_dm_email'] = otherContact.email;
+          if (!otherName) {
+            // Try to combine first_name and last_name
+            let firstName = '';
+            let lastName = '';
+            
+            for (const key of Object.keys(nextContact)) {
+              const lowerKey = key.toLowerCase();
+              if ((lowerKey === 'first_name' || lowerKey === 'firstname') && nextContact[key]) {
+                firstName = nextContact[key].trim();
+              }
+              if ((lowerKey === 'last_name' || lowerKey === 'lastname') && nextContact[key]) {
+                lastName = nextContact[key].trim();
+              }
+            }
+            
+            if (firstName && lastName) {
+              otherName = `${firstName} ${lastName}`;
+            }
+          }
           
-          console.log(`Assigned other_dm_name: ${otherContact.fullName} to row with email ${contact.email}`);
-          enrichedCount++;
+          // Set other_dm_name
+          if (otherName) {
+            contact['other_dm_name'] = otherName;
+            
+            // Get title
+            let otherTitle = '';
+            for (const key of Object.keys(nextContact)) {
+              const lowerKey = key.toLowerCase();
+              if ((lowerKey === 'title' || lowerKey === 'job_title' || lowerKey === 'jobtitle') && nextContact[key]) {
+                otherTitle = nextContact[key].trim();
+                break;
+              }
+            }
+            
+            if (otherTitle) {
+              contact['other_dm_title'] = otherTitle;
+            }
+            
+            // Get email
+            contact['other_dm_email'] = nextContact[emailField] || '';
+            
+            console.log(`Assigned other_dm_name: ${otherName} to row with email ${contact[emailField]}`);
+            enrichedCount++;
+          }
         });
       }
     }
@@ -597,37 +609,67 @@ export const processMultiEmailCSV = async (
   let expandedData: CSVData = [];
   let totalEmailsFound = 0;
   
-  // First expand the data to have one row per email
+  // First expand the data to have one row per email, preserving all metadata
   data.forEach((row, idx) => {
+    // Extract all email columns and their data
+    const emailsWithData: Array<{
+      emailColumn: string,
+      email: string,
+      fullName: string,
+      firstName: string,
+      lastName: string,
+      title: string,
+      phone: string
+    }> = [];
+    
+    // Gather all valid emails and their associated data
     emailColumns.forEach(emailCol => {
       const email = (row[mappedColumns[emailCol]] || '').trim();
       if (!email || !email.includes('@')) return; // Skip invalid emails
       
-      totalEmailsFound++;
-      
       const prefix = emailCol.split('_')[0] + '_' + emailCol.split('_')[1];
-      const newRow: CSVRow = { ...row };
+      const fullNameField = `${prefix}_full_name`;
+      const firstNameField = `${prefix}_first_name`;
+      const lastNameField = `${prefix}_last_name`;
+      const titleField = `${prefix}_title`;
+      const phoneField = `${prefix}_phone`;
       
-      // Remove all email_X columns and their metadata
-      Object.keys(row).forEach(key => {
-        if (key.match(/^email_\d+/) || key.match(/^email_\d+_/)) {
-          delete newRow[key];
-        }
+      emailsWithData.push({
+        emailColumn: emailCol,
+        email: email,
+        fullName: row[mappedColumns[fullNameField] || ''] || '',
+        firstName: row[mappedColumns[firstNameField] || ''] || '',
+        lastName: row[mappedColumns[lastNameField] || ''] || '',
+        title: row[mappedColumns[titleField] || ''] || '',
+        phone: row[mappedColumns[phoneField] || ''] || ''
       });
-      
-      // Add back the current email and its metadata
-      newRow['email'] = email;
-      
-      // Map related fields like full_name, first_name, etc.
-      ['full_name', 'first_name', 'last_name', 'title', 'phone'].forEach(field => {
-        const metadataKey = `${prefix}_${field}`;
-        if (row[metadataKey]) {
-          newRow[field] = row[metadataKey];
-        }
-      });
-      
-      expandedData.push(newRow);
     });
+    
+    // If we found valid emails, create a row for each one
+    if (emailsWithData.length > 0) {
+      totalEmailsFound += emailsWithData.length;
+      
+      // For each email, create a new row with shared data and its specific metadata
+      emailsWithData.forEach(emailData => {
+        const newRow: CSVRow = { ...row };
+        
+        // Add shared data (website, company, etc.)
+        // And preserve any non-email related columns
+        
+        // Add the current email and its metadata
+        newRow['email'] = emailData.email;
+        newRow['full_name'] = emailData.fullName;
+        newRow['first_name'] = emailData.firstName;
+        newRow['last_name'] = emailData.lastName;
+        newRow['title'] = emailData.title;
+        newRow['phone'] = emailData.phone;
+        
+        // Add source info for debugging
+        newRow['_source_email_column'] = emailData.emailColumn;
+        
+        expandedData.push(newRow);
+      });
+    }
     
     if (idx % 20 === 0 || idx === data.length - 1) {
       updateProgress(idx + 1, originalRowCount, 'Organizing email data');
@@ -636,14 +678,134 @@ export const processMultiEmailCSV = async (
   
   console.log(`Expanded to ${expandedData.length} email rows (total emails found: ${totalEmailsFound})`);
   
-  // Process the expanded data through the single email flow
-  return processSingleEmailCSV(
+  if (expandedData.length === 0) {
+    console.log("No valid emails found in the multi-email CSV");
+    return [];
+  }
+  
+  // Now perform MX lookup and cleaning on expanded data
+  updateProgress(0, expandedData.length, 'Processing MX records');
+  let processedData = await processMXBatch(
     expandedData,
     'email',
-    mappedColumns['website'] || '',
-    mappedColumns['company'] || '',
-    updateProgress
+    (processed) => updateProgress(processed, expandedData.length, 'Processing MX records')
   );
+  
+  // Clean company names and websites
+  updateProgress(0, processedData.length, 'Cleaning data');
+  const chunkSize = 500;
+  for (let i = 0; i < processedData.length; i += chunkSize) {
+    const chunkEnd = Math.min(i + chunkSize, processedData.length);
+    
+    for (let j = i; j < chunkEnd; j++) {
+      const row = processedData[j];
+      
+      // Clean company name
+      if (mappedColumns['company'] && row[mappedColumns['company']]) {
+        row['cleaned_company_name'] = cleanCompanyName(row[mappedColumns['company']]);
+      }
+      
+      // Clean website
+      if (mappedColumns['website'] && row[mappedColumns['website']]) {
+        row['cleaned_website'] = cleanWebsiteUrl(row[mappedColumns['website']]);
+      } else if (row['email']) {
+        // Extract domain from email if website field is not available
+        try {
+          const emailDomain = row['email'].split('@')[1];
+          row['cleaned_website'] = emailDomain;
+        } catch (error) {
+          row['cleaned_website'] = '';
+        }
+      }
+    }
+    
+    updateProgress(chunkEnd, processedData.length, 'Cleaning data');
+  }
+  
+  // Count domain occurrences and filter by threshold
+  updateProgress(0, processedData.length, 'Analyzing domain frequencies');
+  const domainCounts: Record<string, number> = {};
+  processedData.forEach(row => {
+    const domain = row['cleaned_website'];
+    if (domain) {
+      domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+    }
+  });
+  
+  // Filter by domain threshold (6)
+  const filteredByDomain = processedData.filter(row => {
+    const domain = row['cleaned_website'];
+    return !domain || domainCounts[domain] <= 6;
+  });
+  
+  console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
+  
+  // Round-robin assignment for other_dm_name
+  updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
+  
+  // Group rows by domain for round-robin assignment
+  const domainMap: Record<string, CSVRow[]> = {};
+  
+  filteredByDomain.forEach(row => {
+    const domain = row['cleaned_website'];
+    if (domain && domain.trim() !== '') {
+      if (!domainMap[domain]) {
+        domainMap[domain] = [];
+      }
+      domainMap[domain].push(row);
+    }
+  });
+  
+  // Process domains with multiple contacts using round-robin assignment
+  let enrichedCount = 0;
+  
+  Object.entries(domainMap).forEach(([domain, rows]) => {
+    if (rows.length > 1) {
+      // Filter for valid contacts (have names and non-generic emails)
+      const validContacts = rows.filter(row => {
+        const email = row['email'] || '';
+        const fullName = row['full_name'] || '';
+        const firstName = row['first_name'] || '';
+        const lastName = row['last_name'] || '';
+        
+        return (fullName || (firstName && lastName)) && !isGenericEmail(email);
+      });
+      
+      console.log(`Domain ${domain}: ${validContacts.length} valid contacts out of ${rows.length} total rows`);
+      
+      if (validContacts.length > 1) {
+        // Assign other_dm_name to each contact in a round-robin fashion
+        validContacts.forEach((contact, index) => {
+          // Get the next contact in the array (round-robin style)
+          const nextIndex = (index + 1) % validContacts.length;
+          const nextContact = validContacts[nextIndex];
+          
+          // Get full name from the next contact
+          let otherName = nextContact['full_name'] || '';
+          
+          if (!otherName && nextContact['first_name'] && nextContact['last_name']) {
+            otherName = `${nextContact['first_name']} ${nextContact['last_name']}`;
+          }
+          
+          if (otherName) {
+            contact['other_dm_name'] = otherName;
+            contact['other_dm_title'] = nextContact['title'] || '';
+            contact['other_dm_email'] = nextContact['email'] || '';
+            
+            console.log(`Assigned other_dm_name: ${otherName} to row with email ${contact['email']}`);
+            enrichedCount++;
+          }
+        });
+      }
+    }
+  });
+  
+  console.log(`Successfully enriched ${enrichedCount} rows with other_dm_name`);
+  
+  updateProgress(filteredByDomain.length, filteredByDomain.length, 'Complete');
+  console.log(`Multi-email processing complete: ${filteredByDomain.length} rows in final output (from ${originalRowCount} original rows)`);
+  
+  return filteredByDomain;
 };
 
 /**
