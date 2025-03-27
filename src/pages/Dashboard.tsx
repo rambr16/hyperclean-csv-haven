@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -19,7 +18,6 @@ const Dashboard: React.FC = () => {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvData, setCsvData] = useState<CSVData>([]);
   const [csvFileName, setCsvFileName] = useState('');
-  // Updated type definition to match what's expected in ProcessingTask
   const [csvFileType, setCsvFileType] = useState<'domain-only' | 'single-email' | 'multi-email' | null>(null);
   const [mappedColumns, setMappedColumns] = useState<Record<string, string>>({});
   const [showMapping, setShowMapping] = useState(false);
@@ -54,7 +52,6 @@ const Dashboard: React.FC = () => {
     setCsvData(data);
     setCsvFileName(fileName);
     
-    // Convert 'unknown' to null for type safety
     setCsvFileType(fileType === 'unknown' ? null : fileType);
     setShowMapping(true);
     setPreviewData(null);
@@ -65,13 +62,11 @@ const Dashboard: React.FC = () => {
     setMappedColumns(mappedColumns);
     setShowMapping(false);
     
-    // Ensure we have a valid file type before processing
     if (!csvFileType) {
       toast.error('Cannot process file: unknown file type');
       return;
     }
     
-    // Start processing after mapping
     const taskId = uuidv4();
     const newTask: ProcessingTask = {
       id: taskId,
@@ -82,7 +77,7 @@ const Dashboard: React.FC = () => {
       totalRows: csvData.length,
       processedRows: 0,
       type: csvFileType,
-      originalRowCount: csvData.length // Store original row count
+      originalRowCount: csvData.length
     };
     
     setTasks(prev => [...prev, newTask]);
@@ -99,7 +94,6 @@ const Dashboard: React.FC = () => {
   };
   
   const processCSV = async (taskId: string, mappedColumns: Record<string, string>) => {
-    // Update task to processing
     updateTaskProgress(taskId, { 
       status: 'processing',
       progress: 0,
@@ -156,18 +150,16 @@ const Dashboard: React.FC = () => {
       
       console.log(`Processing complete: ${result.length} rows in final result (from ${csvData.length} original rows)`);
       
-      // Update task to complete
       updateTaskProgress(taskId, { 
         status: 'complete',
         progress: 1,
         processedRows: result.length,
-        totalRows: csvData.length,  // Keep the original total for reference
+        totalRows: csvData.length,
         result,
         mappedColumns,
-        originalRowCount: csvData.length // Ensure we store the original count
+        originalRowCount: csvData.length
       });
       
-      // Show preview of the latest processed task
       setPreviewData(result);
       
       toast.success(`CSV processing completed. Processed ${csvData.length} rows, resulted in ${result.length} rows after cleaning.`);

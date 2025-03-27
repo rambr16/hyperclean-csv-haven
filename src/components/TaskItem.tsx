@@ -58,11 +58,26 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
     const sample = task.result[0];
     const columns = Object.keys(sample);
     
-    // Count how many rows have other_dm_name with values
-    const otherDMCount = task.result.filter(row => row.other_dm_name && row.other_dm_name.trim() !== '').length;
+    // Count how many rows have other_dm_name with values - improved check
+    const otherDMCount = task.result.filter(row => 
+      row.other_dm_name && 
+      row.other_dm_name.trim() !== '' && 
+      row.other_dm_name !== undefined
+    ).length;
     
-    // Find a good example of other_dm_name to display
-    const exampleRow = task.result.find(row => row.other_dm_name && row.other_dm_name.trim() !== '');
+    // Find a good example of other_dm_name to display - with more thorough checking
+    const exampleRow = task.result.find(row => 
+      row.other_dm_name && 
+      row.other_dm_name.trim() !== '' && 
+      row.other_dm_name !== undefined
+    );
+    
+    console.log(`Found ${otherDMCount} rows with other_dm_name values`);
+    if (exampleRow) {
+      console.log("Example row with other_dm_name:", exampleRow.other_dm_name);
+    } else {
+      console.log("No example row with other_dm_name found");
+    }
     
     return (
       <div className="mt-3 text-xs text-gray-600 space-y-1">
@@ -95,6 +110,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
               <p><b>Email:</b> {exampleRow.email || exampleRow[Object.keys(exampleRow).find(k => k.toLowerCase().includes('email')) || '']}</p>
               <p><b>Alternative Contact:</b> {exampleRow.other_dm_name}</p>
               {exampleRow.other_dm_title && <p><b>Title:</b> {exampleRow.other_dm_title}</p>}
+              {exampleRow.other_dm_email && <p><b>Email:</b> {exampleRow.other_dm_email}</p>}
             </div>
           </div>
         )}
