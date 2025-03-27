@@ -9,6 +9,7 @@ import ProcessingTasks from '@/components/ProcessingTasks';
 import DataPreview from '@/components/DataPreview';
 import { 
   CSVData, 
+  CSVRow,  // Import CSVRow type
   ProcessingTask, 
   processDomainOnlyCSV, 
   processSingleEmailCSV, 
