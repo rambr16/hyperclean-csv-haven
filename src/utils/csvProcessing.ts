@@ -20,6 +20,24 @@ export type ProcessingTask = {
 };
 
 /**
+ * List of columns to exclude from the output CSV
+ */
+export const excludedColumns = [
+  'reviews_link', 'reviews_tags', 'reviews_per_score', 'reviews_per_score_1',
+  'reviews_per_score_2', 'reviews_per_score_3', 'reviews_per_score_4', 'reviews_per_score_5',
+  'photos_count', 'photo', 'street_view', 'located_in', 'working_hours',
+  'working_hours_old_format', 'other_hours', 'popular_times', 'business_status',
+  'about', 'range', 'posts', 'logo', 'description', 'typical_time_spent',
+  'verified', 'owner_id', 'owner_title', 'owner_link', 'reservation_links',
+  'booking_appointment_link', 'menu_link', 'order_links', 'location_link',
+  'location_reviews_link', 'place_id', 'google_id', 'cid', 'kgmid', 'reviews_id',
+  'located_google_id', 'website_title', 'website_generator', 'website_description',
+  'website_keywords', 'website_has_fb_pixel', 'website_has_google_tag', 'tiktok',
+  'medium', 'reddit', 'skype', 'snapchat', 'telegram', 'whatsapp', 'twitter',
+  'vimeo', 'youtube', 'github', 'crunchbase', 'instagram', 'facebook'
+];
+
+/**
  * Parse CSV string to array of objects - optimized version
  */
 export const parseCSV = (csvString: string): { headers: string[], data: CSVData } => {
@@ -895,20 +913,22 @@ export const downloadCSV = (data: CSVData, filename: string): void => {
     allHeaders.add(field);
   });
   
+  // Filter out excluded columns
+  const filteredHeaders = Array.from(allHeaders).filter(header => 
+    !excludedColumns.includes(header.toLowerCase())
+  );
+  
   // Convert to array and ensure each row has all fields
-  const headers = Array.from(allHeaders);
   const processedData = data.map(row => {
-    const newRow = {...row};
-    // Ensure all headers exist in each row
-    headers.forEach(header => {
-      if (newRow[header] === undefined) {
-        newRow[header] = '';
-      }
+    const newRow: CSVRow = {};
+    // Only include non-excluded headers in each row
+    filteredHeaders.forEach(header => {
+      newRow[header] = row[header] !== undefined ? row[header] : '';
     });
     return newRow;
   });
   
-  const csvContent = dataToCSV(headers, processedData);
+  const csvContent = dataToCSV(filteredHeaders, processedData);
   
   // Create a blob and download link
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

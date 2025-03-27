@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Download, ChevronDown, ChevronUp, ChevronsUpDown, Users } from 'lucide-react';
-import { CSVData, downloadCSV } from '@/utils/csvProcessing';
+import { CSVData, downloadCSV, excludedColumns } from '@/utils/csvProcessing';
 
 interface DataPreviewProps {
   data: CSVData;
@@ -43,7 +43,10 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     headerSet.add('other_dm_email');
     headerSet.add('other_dm_title');
     
-    return Array.from(headerSet);
+    // Filter out excluded columns
+    return Array.from(headerSet).filter(header => 
+      !excludedColumns.includes(header.toLowerCase())
+    );
   }, [stableData]);
   
   // Check if there are any rows with other_dm_name

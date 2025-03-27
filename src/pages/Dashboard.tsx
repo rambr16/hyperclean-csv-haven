@@ -7,7 +7,15 @@ import FileUpload from '@/components/FileUpload';
 import ColumnMapping from '@/components/ColumnMapping';
 import ProcessingTasks from '@/components/ProcessingTasks';
 import DataPreview from '@/components/DataPreview';
-import { CSVData, ProcessingTask, processDomainOnlyCSV, processSingleEmailCSV, processMultiEmailCSV, inferCSVType } from '@/utils/csvProcessing';
+import { 
+  CSVData, 
+  ProcessingTask, 
+  processDomainOnlyCSV, 
+  processSingleEmailCSV, 
+  processMultiEmailCSV, 
+  inferCSVType,
+  excludedColumns 
+} from '@/utils/csvProcessing';
 import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -49,7 +57,13 @@ const Dashboard: React.FC = () => {
     fileType: 'domain-only' | 'single-email' | 'multi-email' | 'unknown'
   ) => {
     console.log(`File uploaded: ${fileName}, type: ${fileType}, rows: ${data.length}`);
-    setCsvHeaders(headers);
+    
+    // Filter out excluded columns from headers
+    const filteredHeaders = headers.filter(header => 
+      !excludedColumns.includes(header.toLowerCase())
+    );
+    
+    setCsvHeaders(filteredHeaders);
     setCsvData(data);
     setCsvFileName(fileName);
     
@@ -149,13 +163,24 @@ const Dashboard: React.FC = () => {
       
       console.log(`Processing complete: ${result.length} rows in final result (from ${csvData.length} original rows)`);
       
-      // Ensure result has other_dm fields in each row
-      result = result.map(row => ({
-        ...row,
-        other_dm_name: row.other_dm_name !== undefined ? row.other_dm_name : '',
-        other_dm_email: row.other_dm_email !== undefined ? row.other_dm_email : '',
-        other_dm_title: row.other_dm_title !== undefined ? row.other_dm_title : ''
-      }));
+      // Ensure result has other_dm fields in each row and filter out excluded columns
+      result = result.map(row => {
+        const filteredRow: CSVRow = {};
+        
+        // Copy only non-excluded columns
+        Object.keys(row).forEach(key => {
+          if (!excludedColumns.includes(key.toLowerCase())) {
+            filteredRow[key] = row[key];
+          }
+        });
+        
+        // Ensure other_dm fields exist
+        filteredRow.other_dm_name = row.other_dm_name !== undefined ? row.other_dm_name : '';
+        filteredRow.other_dm_email = row.other_dm_email !== undefined ? row.other_dm_email : '';
+        filteredRow.other_dm_title = row.other_dm_title !== undefined ? row.other_dm_title : '';
+        
+        return filteredRow;
+      });
       
       updateTaskProgress(taskId, { 
         status: 'complete',
