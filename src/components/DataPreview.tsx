@@ -1,8 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Download, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import { Download, ChevronDown, ChevronUp, ChevronsUpDown, Users } from 'lucide-react';
 import { CSVData, downloadCSV } from '@/utils/csvProcessing';
 
 interface DataPreviewProps {
@@ -23,6 +23,11 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   
   const allHeaders = Object.keys(data[0]);
   
+  // Check if there are any rows with other_dm_name
+  const hasAlternativeContacts = useMemo(() => {
+    return data.some(row => row.other_dm_name && row.other_dm_name.trim() !== '');
+  }, [data]);
+  
   // Organize headers to show important columns first
   const priorityHeaders = [
     'email', 'fullName', 'full_name', 'firstName', 'first_name', 'lastName', 'last_name', 
@@ -35,15 +40,15 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     ...allHeaders.filter(h => !priorityHeaders.includes(h))
   ], [allHeaders]);
   
-  const handleDownload = () => {
+  const handleDownload = useCallback(() => {
     downloadCSV(data, `processed_${fileName}`);
-  };
+  }, [data, fileName]);
   
-  const handleLoadMore = () => {
+  const handleLoadMore = useCallback(() => {
     setVisibleRows(prev => Math.min(prev + 10, data.length));
-  };
+  }, [data.length]);
   
-  const handleSortByColumn = (header: string) => {
+  const handleSortByColumn = useCallback((header: string) => {
     if (sortColumn === header) {
       // Toggle direction if clicking the same column
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
@@ -52,7 +57,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
       setSortColumn(header);
       setSortDirection('asc');
     }
-  };
+  }, [sortColumn]);
   
   // Memoize sorted data to avoid unnecessary recalculations
   const sortedData = useMemo(() => {
@@ -67,14 +72,22 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     });
   }, [data, sortColumn, sortDirection]);
   
-  const handleHighlightDomain = (domain: string) => {
+  const handleHighlightDomain = useCallback((domain: string) => {
     setHighlightedDomain(highlightedDomain === domain ? null : domain);
-  };
+  }, [highlightedDomain]);
   
   return (
     <Card className="w-full mt-8 shadow-sm animate-fade-in animate-delay-200">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-xl">Preview ({data.length} rows processed)</CardTitle>
+        <div>
+          <CardTitle className="text-xl">Preview ({data.length} rows processed)</CardTitle>
+          {hasAlternativeContacts && (
+            <p className="text-sm text-green-600 flex items-center mt-1">
+              <Users className="h-4 w-4 mr-1" />
+              Alternative contacts found and assigned
+            </p>
+          )}
+        </div>
         <Button 
           variant="outline" 
           size="sm" 
@@ -115,11 +128,12 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                 // Determine if this row should be highlighted based on domain
                 const rowDomain = row['cleaned_website'] || '';
                 const isHighlighted = highlightedDomain && rowDomain === highlightedDomain;
+                const hasAlternativeContact = row['other_dm_name'] && row['other_dm_name'].trim() !== '';
                 
                 return (
                   <tr 
                     key={rowIndex} 
-                    className={`hover:bg-gray-50 ${isHighlighted ? 'bg-blue-50' : ''}`}
+                    className={`hover:bg-gray-50 ${isHighlighted ? 'bg-blue-50' : ''} ${hasAlternativeContact ? 'border-l-2 border-green-300' : ''}`}
                   >
                     {prioritizedHeaders.map(header => {
                       const value = row[header] || '';
@@ -142,9 +156,12 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                         return (
                           <td 
                             key={`${rowIndex}-${header}`} 
-                            className="px-3 py-2 text-xs font-medium text-green-600"
+                            className="px-3 py-2 text-xs font-medium text-green-600 bg-green-50"
                           >
-                            {value}
+                            <span className="flex items-center">
+                              <Users className="h-3 w-3 mr-1" />
+                              {value}
+                            </span>
                           </td>
                         );
                       }
