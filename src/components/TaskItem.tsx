@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -51,31 +50,27 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
     );
   };
   
-  // Get information about available columns in the result
   const getResultInfo = () => {
     if (!task.result || task.result.length === 0) return null;
     
     const sample = task.result[0];
     const columns = Object.keys(sample);
     
-    // Count how many rows have other_dm_name with values
-    const otherDMCount = task.result.filter(row => 
+    const hasOtherDmNameColumn = columns.includes('other_dm_name');
+    const otherDMCount = hasOtherDmNameColumn ? task.result.filter(row => 
       row.other_dm_name && 
       row.other_dm_name.trim() !== '' && 
       row.other_dm_name !== undefined
-    ).length;
+    ).length : 0;
     
-    // Find a good example of other_dm_name to display
-    const exampleRow = task.result.find(row => 
+    const exampleRow = hasOtherDmNameColumn ? task.result.find(row => 
       row.other_dm_name && 
       row.other_dm_name.trim() !== '' && 
       row.other_dm_name !== undefined
-    );
+    ) : null;
     
-    // Find an example pair to visualize round-robin assignment
     let roundRobinExample = null;
     if (exampleRow && task.result.length > 1) {
-      // Find the row that has the current example's name as other_dm_name
       const matchingRow = task.result.find(row => 
         row.other_dm_name === exampleRow.fullName || 
         row.other_dm_name === exampleRow.full_name || 
@@ -118,7 +113,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
           {columns.includes('cleaned_company_name') && (
             <li>Cleaned company names</li>
           )}
-          {columns.includes('other_dm_name') && (
+          {hasOtherDmNameColumn && (
             <li className="flex items-center">
               <Users className="h-3 w-3 mr-1 text-hyperke-blue" />
               <span className="font-medium text-hyperke-blue">
@@ -167,7 +162,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
           </div>
         )}
         
-        {columns.includes('other_dm_name') && otherDMCount === 0 && (
+        {hasOtherDmNameColumn && otherDMCount === 0 && (
           <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-100">
             <p className="text-yellow-700">
               No alternative contacts were found. This can happen when:
@@ -177,6 +172,9 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
               <li>Contact names are missing</li>
               <li>Generic emails like info@, sales@, etc.</li>
             </ul>
+            <p className="mt-1 text-yellow-700">
+              The other_dm_name column is included with null values.
+            </p>
           </div>
         )}
       </div>

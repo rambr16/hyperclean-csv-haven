@@ -28,6 +28,19 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     return data.some(row => row.other_dm_name && row.other_dm_name.trim() !== '');
   }, [data]);
   
+  // Ensure other_dm_name is always included in the data structure, even if empty
+  const ensureOtherDmNameExists = useMemo(() => {
+    if (!allHeaders.includes('other_dm_name')) {
+      // Add other_dm_name field to all rows if it doesn't exist
+      data.forEach(row => {
+        row['other_dm_name'] = '';
+      });
+      // Add other_dm_name to allHeaders
+      allHeaders.push('other_dm_name');
+    }
+    return true;
+  }, [data, allHeaders]);
+  
   // Organize headers to show important columns first
   const priorityHeaders = [
     'email', 'fullName', 'full_name', 'firstName', 'first_name', 'lastName', 'last_name', 
@@ -36,7 +49,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   ];
   
   const prioritizedHeaders = useMemo(() => [
-    ...priorityHeaders.filter(h => allHeaders.includes(h)),
+    ...priorityHeaders.filter(h => allHeaders.includes(h) || h === 'other_dm_name'),
     ...allHeaders.filter(h => !priorityHeaders.includes(h))
   ], [allHeaders]);
   
@@ -151,17 +164,21 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                         );
                       }
                       
-                      // Highlight other_dm_name relationships
-                      if (header === 'other_dm_name' && value) {
+                      // Highlight other_dm_name relationships - also show when empty
+                      if (header === 'other_dm_name') {
                         return (
                           <td 
                             key={`${rowIndex}-${header}`} 
-                            className="px-3 py-2 text-xs font-medium text-green-600 bg-green-50"
+                            className={`px-3 py-2 text-xs ${value ? 'font-medium text-green-600 bg-green-50' : 'text-gray-400'}`}
                           >
-                            <span className="flex items-center">
-                              <Users className="h-3 w-3 mr-1" />
-                              {value}
-                            </span>
+                            {value ? (
+                              <span className="flex items-center">
+                                <Users className="h-3 w-3 mr-1" />
+                                {value}
+                              </span>
+                            ) : (
+                              'null'
+                            )}
                           </td>
                         );
                       }

@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 import { getDomainFromEmail, isGenericEmail } from './auth';
 
@@ -328,6 +327,9 @@ export const processDomainOnlyCSV = async (
       const websiteUrl = row[websiteField] || '';
       row['cleaned_website'] = cleanWebsiteUrl(websiteUrl);
       
+      // Ensure other_dm_name exists but is empty
+      row['other_dm_name'] = '';
+      
       // Remove whitespace
       Object.keys(row).forEach(key => {
         if (typeof row[key] === 'string') {
@@ -427,6 +429,11 @@ export const processSingleEmailCSV = async (
         } catch (error) {
           row['cleaned_website'] = '';
         }
+      }
+      
+      // Ensure other_dm_name always exists
+      if (!row.hasOwnProperty('other_dm_name')) {
+        row['other_dm_name'] = '';
       }
     }
     
