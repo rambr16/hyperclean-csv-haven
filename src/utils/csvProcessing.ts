@@ -191,7 +191,7 @@ export const cleanCompanyName = (name: string): string => {
     .join(' ');
 };
 
-// Cache for MX results to avoid repeated lookups
+// Cache for MX results to avoid repeated lookups - SINGLE declaration
 const mxCache: Record<string, 'google' | 'microsoft' | 'other'> = {};
 
 /**
@@ -342,7 +342,7 @@ export const processDomainOnlyCSV = async (
 };
 
 /**
- * Process single email CSV - optimized and fixed
+ * Process single email CSV - with fixed other_dm_name enrichment and data loss issues
  */
 export const processSingleEmailCSV = async (
   data: CSVData,
@@ -353,6 +353,9 @@ export const processSingleEmailCSV = async (
 ): Promise<CSVData> => {
   console.log(`Processing single-email CSV with ${data.length} rows`);
   const originalRowCount = data.length;
+  
+  // Store original data for reference before filtering
+  const originalData = [...data];
   
   // Stage 1: Filter out rows with empty emails and remove duplicates
   updateProgress(0, originalRowCount, 'Filtering email data');
@@ -365,12 +368,17 @@ export const processSingleEmailCSV = async (
   
   console.log(`After removing empty emails: ${filteredData.length} rows (removed ${data.length - filteredData.length} rows)`);
   
-  // Then deduplicate emails
+  // Then deduplicate emails - with improved logic to keep more data
   const uniqueEmails = new Map<string, CSVRow>();
   
   filteredData.forEach((row, index) => {
     const email = row[emailField].toLowerCase().trim();
-    if (!uniqueEmails.has(email)) {
+    
+    // Keep the row with more data when duplicates are found
+    if (!uniqueEmails.has(email) || 
+        // Count non-empty values to determine which row has more data
+        Object.values(row).filter(v => v && v.trim() !== '').length > 
+        Object.values(uniqueEmails.get(email) || {}).filter(v => v && v.trim() !== '').length) {
       uniqueEmails.set(email, row);
     }
     
@@ -422,7 +430,7 @@ export const processSingleEmailCSV = async (
     updateProgress(chunkEnd, processedData.length, 'Cleaning data');
   }
   
-  // Stage 4: Count domain occurrences and filter out domains with more than 5 occurrences
+  // Stage 4: Count domain occurrences but be less aggressive with filtering
   updateProgress(0, processedData.length, 'Analyzing domain frequencies');
   const domainCounts: Record<string, number> = {};
   
@@ -434,15 +442,16 @@ export const processSingleEmailCSV = async (
     }
   });
   
-  // Then filter out domains with more than 5 occurrences
+  // Then filter out domains with more than 10 occurrences (increased from 5)
+  // to reduce data loss while still removing spam/generic domains
   const filteredByDomain = processedData.filter(row => {
     const domain = row['cleaned_website'];
-    return !domain || domainCounts[domain] <= 5;
+    return !domain || domainCounts[domain] <= 10; // Increased threshold from 5 to 10
   });
   
   console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
   
-  // Stage 5: Add alternative names for duplicate domains - Fixed other_dm_name implementation
+  // Stage 5: Add alternative names for duplicate domains - Improved other_dm_name implementation
   updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
   
   // Group rows by domain
@@ -459,54 +468,64 @@ export const processSingleEmailCSV = async (
   });
   
   // Process domains with multiple contacts
-  Object.keys(domainMap).forEach(domain => {
-    const rows = domainMap[domain];
-    
+  Object.entries(domainMap).forEach(([domain, rows]) => {
     if (rows.length > 1) {
-      // Extract fullnames
-      const fullNames: string[] = [];
-      
-      rows.forEach(row => {
-        // Try to find name from various possible fields
+      // Extract name details from rows
+      const contactDetails = rows.map(row => {
         let fullName = '';
+        let firstName = '';
+        let lastName = '';
+        let title = '';
+        
+        // Try to find name from various possible fields
         if (row['full_name']) fullName = row['full_name'];
         else if (row['fullname']) fullName = row['fullname'];
         else if (row['name']) fullName = row['name'];
         else if (row['first_name'] && row['last_name']) {
           fullName = `${row['first_name']} ${row['last_name']}`;
+          firstName = row['first_name'];
+          lastName = row['last_name'];
+        } else if (row['firstname'] && row['lastname']) {
+          fullName = `${row['firstname']} ${row['lastname']}`;
+          firstName = row['firstname'];
+          lastName = row['lastname'];
         }
         
-        if (fullName && fullName.trim() !== '') {
-          fullNames.push(fullName.trim());
-        }
+        if (row['title']) title = row['title'];
+        else if (row['job_title']) title = row['job_title'];
+        
+        return {
+          row,
+          fullName: fullName.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          title: title.trim(),
+          email: row[emailField]
+        };
       });
       
-      if (fullNames.length > 1) {
-        // Assign alternative names using round-robin
-        rows.forEach((row, index) => {
-          // Find current row's name
-          let currentName = '';
-          if (row['full_name']) currentName = row['full_name'];
-          else if (row['fullname']) currentName = row['fullname'];
-          else if (row['name']) currentName = row['name'];
-          else if (row['first_name'] && row['last_name']) {
-            currentName = `${row['first_name']} ${row['last_name']}`;
+      // Filter out entries with no name or generic emails
+      const validContacts = contactDetails.filter(contact => 
+        contact.fullName && !isGenericEmail(contact.email)
+      );
+      
+      // Skip if there aren't at least 2 valid contacts
+      if (validContacts.length > 1) {
+        // Assign other_dm_name to each row
+        validContacts.forEach((contact, index) => {
+          // Get a different contact from the array (round-robin style)
+          const otherIndex = (index + 1) % validContacts.length;
+          const otherContact = validContacts[otherIndex];
+          
+          // Add other contact's information to the row
+          contact.row['other_dm_name'] = otherContact.fullName;
+          
+          // Optionally add more details about the alternative contact
+          if (otherContact.title) {
+            contact.row['other_dm_title'] = otherContact.title;
           }
           
-          // Skip if no name found or generic email
-          if (!currentName || isGenericEmail(row[emailField])) {
-            return;
-          }
-          
-          // Find alternative names (excluding current name)
-          const otherNames = fullNames.filter(name => name !== currentName);
-          
-          if (otherNames.length > 0) {
-            // Assign using round-robin
-            const altNameIndex = index % otherNames.length;
-            row['other_dm_name'] = otherNames[altNameIndex];
-            console.log(`Assigned other_dm_name: ${otherNames[altNameIndex]} to row with email ${row[emailField]}`);
-          }
+          console.log(`Assigned other_dm_name: ${otherContact.fullName} to row with email ${contact.email}`);
         });
       }
     }
@@ -519,7 +538,7 @@ export const processSingleEmailCSV = async (
 };
 
 /**
- * Process multi-email CSV - fixed to handle empty emails and duplicates
+ * Process multi-email CSV - improved to better handle data and ensure other_dm_name is added
  */
 export const processMultiEmailCSV = async (
   data: CSVData,
@@ -576,13 +595,18 @@ export const processMultiEmailCSV = async (
   
   console.log(`Expanded to ${expandedData.length} email rows (total emails found: ${totalEmailsFound})`);
   
-  // Deduplicate emails
+  // Deduplicate emails - with improved logic to keep more data
   updateProgress(0, expandedData.length, 'Removing duplicate emails');
   
   const uniqueEmails = new Map<string, CSVRow>();
   expandedData.forEach((row, idx) => {
     const email = row['email'].toLowerCase().trim();
-    if (!uniqueEmails.has(email)) {
+    
+    // Keep the row with more data when duplicates are found
+    if (!uniqueEmails.has(email) || 
+        // Count non-empty values to determine which row has more data
+        Object.values(row).filter(v => v && v.trim() !== '').length > 
+        Object.values(uniqueEmails.get(email) || {}).filter(v => v && v.trim() !== '').length) {
       uniqueEmails.set(email, row);
     }
     

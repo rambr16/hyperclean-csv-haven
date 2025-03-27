@@ -2,7 +2,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { Download, ChevronDown, ChevronUp, Users } from 'lucide-react';
 import { ProcessingTask } from '@/utils/csvProcessing';
 import { downloadCSV } from '@/utils/csvProcessing';
 
@@ -57,10 +57,12 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
     
     const sample = task.result[0];
     const columns = Object.keys(sample);
-    const totalRows = task.result.length;
     
     // Count how many rows have other_dm_name with values
     const otherDMCount = task.result.filter(row => row.other_dm_name && row.other_dm_name.trim() !== '').length;
+    
+    // Find a good example of other_dm_name to display
+    const exampleRow = task.result.find(row => row.other_dm_name && row.other_dm_name.trim() !== '');
     
     return (
       <div className="mt-3 text-xs text-gray-600 space-y-1">
@@ -76,22 +78,37 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
             <li>Cleaned company names</li>
           )}
           {columns.includes('other_dm_name') && (
-            <li>{otherDMCount > 0 ? 
-              `Alternative contacts (${otherDMCount} rows)` : 
-              'Alternative contacts column (no alternatives found)'}</li>
+            <li className="flex items-center">
+              <Users className="h-3 w-3 mr-1 text-hyperke-blue" />
+              <span className="font-medium text-hyperke-blue">
+                Alternative contacts 
+                {otherDMCount > 0 ? ` (${otherDMCount} contacts found)` : ' (none found)'}
+              </span>
+            </li>
           )}
         </ul>
         
-        {otherDMCount > 0 && (
+        {otherDMCount > 0 && exampleRow && (
           <div className="mt-2 p-2 bg-green-50 rounded border border-green-100">
             <p className="font-medium text-green-700">Alternative Contact Example:</p>
-            {task.result.find(row => row.other_dm_name && row.other_dm_name.trim() !== '') && (
-              <div className="mt-1 text-xs text-green-800">
-                <p>Contact with alternative: {
-                  task.result.find(row => row.other_dm_name && row.other_dm_name.trim() !== '')?.other_dm_name
-                }</p>
-              </div>
-            )}
+            <div className="mt-1 text-xs text-green-800 space-y-1">
+              <p><b>Email:</b> {exampleRow.email || exampleRow[Object.keys(exampleRow).find(k => k.toLowerCase().includes('email')) || '']}</p>
+              <p><b>Alternative Contact:</b> {exampleRow.other_dm_name}</p>
+              {exampleRow.other_dm_title && <p><b>Title:</b> {exampleRow.other_dm_title}</p>}
+            </div>
+          </div>
+        )}
+        
+        {columns.includes('other_dm_name') && otherDMCount === 0 && (
+          <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-100">
+            <p className="text-yellow-700">
+              No alternative contacts were found. This can happen when:
+            </p>
+            <ul className="list-disc pl-5 mt-1 text-yellow-800">
+              <li>There's only one contact per domain</li>
+              <li>Contact names are missing</li>
+              <li>Generic emails like info@, sales@, etc.</li>
+            </ul>
           </div>
         )}
       </div>
