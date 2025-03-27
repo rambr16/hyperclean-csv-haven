@@ -23,12 +23,25 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   
   // Create a stable copy of the data to prevent modification of props directly
   const stableData = useMemo(() => {
-    return [...data];
+    return data.map(row => ({
+      ...row,
+      // Ensure other_dm_name exists in every row
+      other_dm_name: row.other_dm_name !== undefined ? row.other_dm_name : ''
+    }));
   }, [data]);
   
   // Get all headers from the data once
   const allHeaders = useMemo(() => {
-    return Object.keys(stableData[0] || {});
+    // Get all possible headers from all rows
+    const headerSet = new Set<string>();
+    stableData.forEach(row => {
+      Object.keys(row).forEach(key => headerSet.add(key));
+    });
+    
+    // Ensure other_dm_name is in the headers even if it's not in any row
+    headerSet.add('other_dm_name');
+    
+    return Array.from(headerSet);
   }, [stableData]);
   
   // Check if there are any rows with other_dm_name
@@ -44,11 +57,8 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   ];
   
   const prioritizedHeaders = useMemo(() => {
-    // Make sure other_dm_name is included even if not in allHeaders
+    // Make sure other_dm_name is included in headers
     const uniqueHeaders = new Set([...allHeaders]);
-    if (!uniqueHeaders.has('other_dm_name')) {
-      uniqueHeaders.add('other_dm_name');
-    }
     
     // Sort the headers with priority headers first
     return [
@@ -58,6 +68,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   }, [allHeaders]);
   
   const handleDownload = useCallback(() => {
+    // Make sure our updated data with other_dm_name is downloaded
     downloadCSV(stableData, `processed_${fileName}`);
   }, [stableData, fileName]);
   
@@ -154,35 +165,10 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                     className={`hover:bg-gray-50 ${isHighlighted ? 'bg-blue-50' : ''} ${hasAlternativeContact ? 'border-l-2 border-green-300' : ''}`}
                   >
                     {prioritizedHeaders.map(header => {
-                      // Check if this row has this property, if not return empty cell
-                      if (header === 'other_dm_name' && !(header in row)) {
-                        return (
-                          <td 
-                            key={`${rowIndex}-${header}`} 
-                            className="px-3 py-2 text-xs text-gray-400"
-                          >
-                            null
-                          </td>
-                        );
-                      }
-                      
-                      const value = row[header] || '';
-                      
-                      // Highlight domains with clickable behavior
-                      if (header === 'cleaned_website' && value) {
-                        return (
-                          <td 
-                            key={`${rowIndex}-${header}`} 
-                            className="px-3 py-2 text-xs cursor-pointer text-blue-600 hover:underline"
-                            onClick={() => handleHighlightDomain(value)}
-                          >
-                            {value}
-                          </td>
-                        );
-                      }
-                      
-                      // Highlight other_dm_name relationships
+                      // Special handling for other_dm_name to always display it
                       if (header === 'other_dm_name') {
+                        const value = row[header] || '';
+                        
                         return (
                           <td 
                             key={`${rowIndex}-${header}`} 
@@ -200,13 +186,26 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                         );
                       }
                       
+                      // Highlight domains with clickable behavior
+                      if (header === 'cleaned_website' && row[header]) {
+                        return (
+                          <td 
+                            key={`${rowIndex}-${header}`} 
+                            className="px-3 py-2 text-xs cursor-pointer text-blue-600 hover:underline"
+                            onClick={() => handleHighlightDomain(row[header])}
+                          >
+                            {row[header]}
+                          </td>
+                        );
+                      }
+                      
                       // Display all other values normally
                       return (
                         <td 
                           key={`${rowIndex}-${header}`} 
                           className="px-3 py-2 text-xs text-gray-800 whitespace-nowrap"
                         >
-                          {value || '-'}
+                          {row[header] !== undefined ? row[header] : '-'}
                         </td>
                       );
                     })}

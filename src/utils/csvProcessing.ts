@@ -306,12 +306,12 @@ export const processMXBatch = async (
 };
 
 /**
- * Process CSV with domain only
+ * Process domain only
  */
 export const processDomainOnlyCSV = async (
   data: CSVData,
   websiteField: string,
-  updateProgress: (processed: number, total: number) => void
+  updateProgress: (processed: number) => void
 ): Promise<CSVData> => {
   const result: CSVData = [];
   console.log(`Processing domain-only CSV with ${data.length} rows`);
@@ -431,10 +431,10 @@ export const processSingleEmailCSV = async (
         }
       }
       
-      // Ensure other_dm_name always exists
-      if (!row.hasOwnProperty('other_dm_name')) {
-        row['other_dm_name'] = '';
-      }
+      // Ensure other_dm_name always exists with null value
+      row['other_dm_name'] = '';
+      row['other_dm_email'] = '';
+      row['other_dm_title'] = '';
     }
     
     updateProgress(chunkEnd, processedData.length, 'Cleaning data');
@@ -455,12 +455,12 @@ export const processSingleEmailCSV = async (
   // Then filter out domains with more than 6 occurrences
   const filteredByDomain = processedData.filter(row => {
     const domain = row['cleaned_website'];
-    return !domain || domainCounts[domain] <= 6; // Using threshold of 6
+    return !domain || domainCounts[domain] <= 10; // Increased threshold to 10
   });
   
   console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
   
-  // Stage 5: Improved round-robin assignment for other_dm_name
+  // Stage 5: Improved round-robin assignment for other_dm_name with debugging
   updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
   
   // Group rows by domain
@@ -476,117 +476,77 @@ export const processSingleEmailCSV = async (
     }
   });
   
-  // Process domains with multiple contacts - improved round-robin implementation
+  // Debug domain grouping
+  console.log(`Found ${Object.keys(domainMap).length} unique domains for processing`);
+  
+  // Process domains with multiple contacts - Fix for round-robin assignment
   let enrichedCount = 0;
   
   Object.entries(domainMap).forEach(([domain, rows]) => {
     if (rows.length > 1) {
-      // Extract valid contacts with names and non-generic emails
-      const validContacts = rows.filter(row => {
-        // Check for full name
-        let hasName = false;
-        let email = '';
+      console.log(`Domain ${domain} has ${rows.length} contacts. Processing for round-robin...`);
+      
+      // For domains with multiple rows, assign other_dm_name to each row
+      // by referring to other rows in the same domain
+      for (let i = 0; i < rows.length; i++) {
+        const currentRow = rows[i];
+        // Next person in the same domain (with wraparound)
+        const nextIndex = (i + 1) % rows.length;
+        const nextRow = rows[nextIndex];
         
-        // Get name
-        for (const key of Object.keys(row)) {
-          const lowerKey = key.toLowerCase();
-          if ((lowerKey === 'full_name' || lowerKey === 'fullname' || lowerKey === 'name') && row[key]) {
-            hasName = true;
-            break;
+        // Get all possible name fields from the next row
+        let otherDmName = '';
+        let otherDmEmail = '';
+        let otherDmTitle = '';
+        
+        // Try to find the name in various fields
+        if (nextRow['full_name'] && nextRow['full_name'].trim()) {
+          otherDmName = nextRow['full_name'].trim();
+        } else if (nextRow['fullName'] && nextRow['fullName'].trim()) {
+          otherDmName = nextRow['fullName'].trim();
+        } else {
+          // Try combination of first and last name
+          let firstName = '';
+          let lastName = '';
+          
+          if (nextRow['first_name']) firstName = nextRow['first_name'].trim();
+          else if (nextRow['firstName']) firstName = nextRow['firstName'].trim();
+          
+          if (nextRow['last_name']) lastName = nextRow['last_name'].trim();
+          else if (nextRow['lastName']) lastName = nextRow['lastName'].trim();
+          
+          if (firstName && lastName) {
+            otherDmName = `${firstName} ${lastName}`;
           }
         }
         
-        // Check first and last name if full name not found
-        if (!hasName) {
-          let hasFirstName = false;
-          let hasLastName = false;
-          
-          for (const key of Object.keys(row)) {
-            const lowerKey = key.toLowerCase();
-            if ((lowerKey === 'first_name' || lowerKey === 'firstname') && row[key]) {
-              hasFirstName = true;
-            }
-            if ((lowerKey === 'last_name' || lowerKey === 'lastname') && row[key]) {
-              hasLastName = true;
-            }
-          }
-          
-          hasName = hasFirstName && hasLastName;
+        // If we couldn't find a name, try extracting from Full Name
+        if (!otherDmName && nextRow['Full Name']) {
+          otherDmName = nextRow['Full Name'].trim();
         }
         
-        // Get email
-        email = row[emailField] || '';
+        // Get email and title
+        otherDmEmail = nextRow[emailField] || '';
         
-        return hasName && email && !isGenericEmail(email);
-      });
-      
-      console.log(`Domain ${domain} has ${validContacts.length} valid contacts with names`);
-      
-      if (validContacts.length > 1) {
-        // Improved round-robin assignment
-        validContacts.forEach((contact, index) => {
-          // Get the next contact in the array (round-robin style)
-          const nextIndex = (index + 1) % validContacts.length;
-          const nextContact = validContacts[nextIndex];
-          
-          // Get the full name from nextContact
-          let otherName = '';
-          let otherTitle = '';
-          
-          // Try to find name from various possible fields
-          for (const key of Object.keys(nextContact)) {
-            const lowerKey = key.toLowerCase();
-            if ((lowerKey === 'full_name' || lowerKey === 'fullname' || lowerKey === 'name') && nextContact[key]) {
-              otherName = nextContact[key].trim();
-              break;
-            }
-          }
-          
-          if (!otherName) {
-            // Try to combine first_name and last_name
-            let firstName = '';
-            let lastName = '';
-            
-            for (const key of Object.keys(nextContact)) {
-              const lowerKey = key.toLowerCase();
-              if ((lowerKey === 'first_name' || lowerKey === 'firstname') && nextContact[key]) {
-                firstName = nextContact[key].trim();
-              }
-              if ((lowerKey === 'last_name' || lowerKey === 'lastname') && nextContact[key]) {
-                lastName = nextContact[key].trim();
-              }
-            }
-            
-            if (firstName && lastName) {
-              otherName = `${firstName} ${lastName}`;
-            }
-          }
-          
-          // Get title
-          for (const key of Object.keys(nextContact)) {
-            const lowerKey = key.toLowerCase();
-            if ((lowerKey === 'title' || lowerKey === 'job_title' || lowerKey === 'jobtitle') && nextContact[key]) {
-              otherTitle = nextContact[key].trim();
-              break;
-            }
-          }
-          
-          // Set other_dm_name
-          if (otherName) {
-            contact['other_dm_name'] = otherName;
-            
-            if (otherTitle) {
-              contact['other_dm_title'] = otherTitle;
-            }
-            
-            // Get email
-            contact['other_dm_email'] = nextContact[emailField] || '';
-            
-            console.log(`Assigned other_dm_name: ${otherName} to row with email ${contact[emailField]}`);
-            enrichedCount++;
-          }
-        });
+        if (nextRow['title']) {
+          otherDmTitle = nextRow['title'].trim();
+        } else if (nextRow['Title']) {
+          otherDmTitle = nextRow['Title'].trim();
+        }
+        
+        // Only assign if we found a valid name
+        if (otherDmName) {
+          console.log(`Assigning other_dm_name "${otherDmName}" to row with email "${currentRow[emailField]}"`);
+          currentRow['other_dm_name'] = otherDmName;
+          currentRow['other_dm_email'] = otherDmEmail;
+          currentRow['other_dm_title'] = otherDmTitle;
+          enrichedCount++;
+        } else {
+          console.log(`Could not find a valid name for domain ${domain} in row ${nextIndex}`);
+        }
       }
+    } else {
+      console.log(`Domain ${domain} has only one contact, skipping round-robin assignment`);
     }
   });
   
@@ -815,18 +775,60 @@ export const processMultiEmailCSV = async (
           const nextIndex = (index + 1) % validContacts.length;
           const nextContact = validContacts[nextIndex];
           
-          // Extract name from next contact
-          const otherName = nextContact['fullName'] || 
-                          (nextContact['firstName'] && nextContact['lastName'] ? 
-                           `${nextContact['firstName']} ${nextContact['lastName']}` : '');
+          // Get the full name from nextContact
+          let otherName = '';
+          let otherTitle = '';
           
-          if (otherName) {
-            // Set alternative contact information
-            contact['other_dm_name'] = otherName;
-            contact['other_dm_title'] = nextContact['title'] || '';
-            contact['other_dm_email'] = nextContact['email'] || '';
+          // Try to find name from various possible fields
+          for (const key of Object.keys(nextContact)) {
+            const lowerKey = key.toLowerCase();
+            if ((lowerKey === 'full_name' || lowerKey === 'fullname' || lowerKey === 'name') && nextContact[key]) {
+              otherName = nextContact[key].trim();
+              break;
+            }
+          }
+          
+          if (!otherName) {
+            // Try to combine first_name and last_name
+            let firstName = '';
+            let lastName = '';
             
-            console.log(`Assigned other_dm_name: ${otherName} to email ${contact['email']}`);
+            for (const key of Object.keys(nextContact)) {
+              const lowerKey = key.toLowerCase();
+              if ((lowerKey === 'first_name' || lowerKey === 'firstname') && nextContact[key]) {
+                firstName = nextContact[key].trim();
+              }
+              if ((lowerKey === 'last_name' || lowerKey === 'lastname') && nextContact[key]) {
+                lastName = nextContact[key].trim();
+              }
+            }
+            
+            if (firstName && lastName) {
+              otherName = `${firstName} ${lastName}`;
+            }
+          }
+          
+          // Get title
+          for (const key of Object.keys(nextContact)) {
+            const lowerKey = key.toLowerCase();
+            if ((lowerKey === 'title' || lowerKey === 'job_title' || lowerKey === 'jobtitle') && nextContact[key]) {
+              otherTitle = nextContact[key].trim();
+              break;
+            }
+          }
+          
+          // Set other_dm_name
+          if (otherName) {
+            contact['other_dm_name'] = otherName;
+            
+            if (otherTitle) {
+              contact['other_dm_title'] = otherTitle;
+            }
+            
+            // Get email
+            contact['other_dm_email'] = nextContact[emailField] || '';
+            
+            console.log(`Assigned other_dm_name: ${otherName} to row with email ${contact[emailField]}`);
             enrichedCount++;
           }
         });
