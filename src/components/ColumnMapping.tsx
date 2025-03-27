@@ -24,10 +24,11 @@ const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColu
       website: /^website$|^domain$|^url$|^site$/i,
       company: /^company$|^organization$|^org$|^company.?name$/i,
       fullname: /^fullname$|^full.?name$|^name$/i,
+      firstname: /^firstname$|^first.?name$/i,
+      lastname: /^lastname$|^last.?name$/i,
+      title: /^title$|^job.?title$/i,
+      phone: /^phone$|^telephone$|^mobile$/i,
     };
-    
-    // Handle multi-email columns
-    const emailColumns = headers.filter(h => h.match(/^email_\d+$/i));
     
     if (fileType === 'domain-only') {
       // Find domain/website column
@@ -60,12 +61,71 @@ const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColu
       if (fullnameColumn) {
         autoMap['fullname'] = fullnameColumn;
       }
+      
+      // Find first name column
+      const firstnameColumn = headers.find(h => patterns.firstname.test(h));
+      if (firstnameColumn) {
+        autoMap['firstname'] = firstnameColumn;
+      }
+      
+      // Find last name column
+      const lastnameColumn = headers.find(h => patterns.lastname.test(h));
+      if (lastnameColumn) {
+        autoMap['lastname'] = lastnameColumn;
+      }
+      
+      // Find title column
+      const titleColumn = headers.find(h => patterns.title.test(h));
+      if (titleColumn) {
+        autoMap['title'] = titleColumn;
+      }
+      
+      // Find phone column
+      const phoneColumn = headers.find(h => patterns.phone.test(h));
+      if (phoneColumn) {
+        autoMap['phone'] = phoneColumn;
+      }
     } 
     else if (fileType === 'multi-email') {
-      // Map all email_X columns
-      emailColumns.forEach(col => {
-        autoMap[col] = col;
-      });
+      // Try to detect email columns in patterns like email_1, email_2, etc.
+      const emailColumns = headers.filter(h => /^email_\d+$/i.test(h));
+      
+      // If regular email_X columns are found
+      if (emailColumns.length > 0) {
+        emailColumns.forEach(col => {
+          autoMap[col] = col;
+          
+          // Look for associated metadata columns like email_1_full_name, email_1_title, etc.
+          const prefix = col.replace(/_?$/, '_');
+          
+          // Try to map metadata columns for each email
+          headers.forEach(header => {
+            if (header.startsWith(prefix)) {
+              const suffix = header.substring(prefix.length);
+              if (/full_?name/i.test(suffix)) {
+                autoMap[`${col}_full_name`] = header;
+              } else if (/first_?name/i.test(suffix)) {
+                autoMap[`${col}_first_name`] = header;
+              } else if (/last_?name/i.test(suffix)) {
+                autoMap[`${col}_last_name`] = header;
+              } else if (/title/i.test(suffix)) {
+                autoMap[`${col}_title`] = header;
+              } else if (/phone/i.test(suffix)) {
+                autoMap[`${col}_phone`] = header;
+              }
+            }
+          });
+        });
+      } else {
+        // If no email_X pattern found, look for regular email columns
+        let emailIndex = 1;
+        headers.forEach(header => {
+          if (patterns.email.test(header)) {
+            autoMap[`email_${emailIndex}`] = header;
+            emailIndex++;
+          }
+        });
+      }
       
       // Find website column
       const websiteColumn = headers.find(h => patterns.website.test(h));
@@ -80,6 +140,7 @@ const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColu
       }
     }
     
+    console.log('Auto-mapped columns:', autoMap);
     setMappedColumns(autoMap);
   }, [headers, fileType]);
   
@@ -126,15 +187,46 @@ const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColu
           { id: 'website', label: 'Website URL', required: false },
           { id: 'company', label: 'Company Name', required: false },
           { id: 'fullname', label: 'Full Name', required: false },
+          { id: 'firstname', label: 'First Name', required: false },
+          { id: 'lastname', label: 'Last Name', required: false },
+          { id: 'title', label: 'Job Title', required: false },
+          { id: 'phone', label: 'Phone', required: false },
         ];
       case 'multi-email':
-        // First find all email columns
-        const emailColumns = headers.filter(h => h.match(/email_\d+$/i));
-        const fields = emailColumns.map(col => ({ 
-          id: col, 
-          label: `${col.charAt(0).toUpperCase() + col.slice(1)} Column`, 
-          required: true 
-        }));
+        // First find all email columns in the format email_1, email_2, etc.
+        let emailColumns = headers.filter(h => /^email_\d+$/i.test(h));
+        
+        // If no email_X columns found, create default email_1, email_2, etc fields
+        if (emailColumns.length === 0) {
+          const emailCount = Math.min(
+            headers.filter(h => /email|mail/i.test(h)).length, 
+            5  // Limit to max 5 email columns
+          );
+          
+          for (let i = 1; i <= Math.max(1, emailCount); i++) {
+            emailColumns.push(`email_${i}`);
+          }
+        }
+        
+        let fields = [];
+        
+        // Add email columns
+        for (const emailCol of emailColumns) {
+          fields.push({ 
+            id: emailCol, 
+            label: `${emailCol.charAt(0).toUpperCase() + emailCol.slice(1).replace('_', ' ')}`, 
+            required: true 
+          });
+          
+          // Add associated metadata fields
+          fields.push(
+            { id: `${emailCol}_full_name`, label: `${emailCol} Full Name`, required: false },
+            { id: `${emailCol}_first_name`, label: `${emailCol} First Name`, required: false },
+            { id: `${emailCol}_last_name`, label: `${emailCol} Last Name`, required: false },
+            { id: `${emailCol}_title`, label: `${emailCol} Title`, required: false },
+            { id: `${emailCol}_phone`, label: `${emailCol} Phone`, required: false }
+          );
+        }
         
         // Add website and company fields
         return [

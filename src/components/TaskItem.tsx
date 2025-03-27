@@ -72,11 +72,37 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
       row.other_dm_name !== undefined
     );
     
-    console.log(`Found ${otherDMCount} rows with other_dm_name values`);
-    if (exampleRow) {
-      console.log("Example row with other_dm_name:", exampleRow.other_dm_name);
-    } else {
-      console.log("No example row with other_dm_name found");
+    // Find an example pair to visualize round-robin assignment
+    let roundRobinExample = null;
+    if (exampleRow && task.result.length > 1) {
+      // Find the row that has the current example's name as other_dm_name
+      const matchingRow = task.result.find(row => 
+        row.other_dm_name === exampleRow.fullName || 
+        row.other_dm_name === exampleRow.full_name || 
+        (exampleRow.firstName && exampleRow.lastName && 
+          row.other_dm_name === `${exampleRow.firstName} ${exampleRow.lastName}`) ||
+        (exampleRow.first_name && exampleRow.last_name && 
+          row.other_dm_name === `${exampleRow.first_name} ${exampleRow.last_name}`)
+      );
+      
+      if (matchingRow) {
+        roundRobinExample = {
+          person1: {
+            name: exampleRow.fullName || exampleRow.full_name || 
+                `${exampleRow.firstName || exampleRow.first_name || ''} ${exampleRow.lastName || exampleRow.last_name || ''}`.trim(),
+            email: exampleRow.email,
+            title: exampleRow.title || '',
+            altContact: exampleRow.other_dm_name
+          },
+          person2: {
+            name: matchingRow.fullName || matchingRow.full_name || 
+                `${matchingRow.firstName || matchingRow.first_name || ''} ${matchingRow.lastName || matchingRow.last_name || ''}`.trim(),
+            email: matchingRow.email,
+            title: matchingRow.title || '',
+            altContact: matchingRow.other_dm_name
+          }
+        };
+      }
     }
     
     return (
@@ -107,10 +133,36 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
           <div className="mt-2 p-2 bg-green-50 rounded border border-green-100">
             <p className="font-medium text-green-700">Alternative Contact Example:</p>
             <div className="mt-1 text-xs text-green-800 space-y-1">
-              <p><b>Email:</b> {exampleRow.email || exampleRow[Object.keys(exampleRow).find(k => k.toLowerCase().includes('email')) || '']}</p>
+              <p><b>Email:</b> {exampleRow.email}</p>
+              <p><b>Name:</b> {exampleRow.fullName || exampleRow.full_name || 
+                `${exampleRow.firstName || exampleRow.first_name || ''} ${exampleRow.lastName || exampleRow.last_name || ''}`.trim()}</p>
               <p><b>Alternative Contact:</b> {exampleRow.other_dm_name}</p>
-              {exampleRow.other_dm_title && <p><b>Title:</b> {exampleRow.other_dm_title}</p>}
-              {exampleRow.other_dm_email && <p><b>Email:</b> {exampleRow.other_dm_email}</p>}
+              {exampleRow.other_dm_title && <p><b>Alt. Title:</b> {exampleRow.other_dm_title}</p>}
+              {exampleRow.other_dm_email && <p><b>Alt. Email:</b> {exampleRow.other_dm_email}</p>}
+            </div>
+          </div>
+        )}
+        
+        {roundRobinExample && (
+          <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-100">
+            <p className="font-medium text-blue-700">Round-Robin Assignment Example:</p>
+            <div className="grid grid-cols-2 gap-4 mt-2">
+              <div className="text-xs text-blue-800 space-y-1 p-2 bg-white rounded">
+                <p><b>Person 1:</b> {roundRobinExample.person1.name}</p>
+                <p><b>Email:</b> {roundRobinExample.person1.email}</p>
+                {roundRobinExample.person1.title && <p><b>Title:</b> {roundRobinExample.person1.title}</p>}
+                <p className="border-t border-blue-100 pt-1 mt-1">
+                  <b>Alt Contact:</b> {roundRobinExample.person1.altContact}
+                </p>
+              </div>
+              <div className="text-xs text-blue-800 space-y-1 p-2 bg-white rounded">
+                <p><b>Person 2:</b> {roundRobinExample.person2.name}</p>
+                <p><b>Email:</b> {roundRobinExample.person2.email}</p>
+                {roundRobinExample.person2.title && <p><b>Title:</b> {roundRobinExample.person2.title}</p>}
+                <p className="border-t border-blue-100 pt-1 mt-1">
+                  <b>Alt Contact:</b> {roundRobinExample.person2.altContact}
+                </p>
+              </div>
             </div>
           </div>
         )}
