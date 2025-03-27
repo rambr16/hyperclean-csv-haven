@@ -72,7 +72,8 @@ const Dashboard: React.FC = () => {
       progress: 0,
       totalRows: csvData.length,
       processedRows: 0,
-      type: csvFileType as 'domain-only' | 'single-email' | 'multi-email' // Fix the type error
+      type: csvFileType,
+      originalRowCount: csvData.length // Store original row count
     };
     
     setTasks(prev => [...prev, newTask]);
@@ -144,7 +145,7 @@ const Dashboard: React.FC = () => {
         );
       }
       
-      console.log(`Processing complete: ${result.length} rows in final result`);
+      console.log(`Processing complete: ${result.length} rows in final result (from ${csvData.length} original rows)`);
       
       // Update task to complete
       updateTaskProgress(taskId, { 
@@ -153,7 +154,8 @@ const Dashboard: React.FC = () => {
         processedRows: result.length,
         totalRows: csvData.length,  // Keep the original total for reference
         result,
-        mappedColumns
+        mappedColumns,
+        originalRowCount: csvData.length // Ensure we store the original count
       });
       
       // Show preview of the latest processed task

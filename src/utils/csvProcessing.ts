@@ -1,3 +1,4 @@
+
 import { toast } from 'sonner';
 import { getDomainFromEmail, isGenericEmail } from './auth';
 
@@ -16,6 +17,7 @@ export type ProcessingTask = {
   result?: CSVData;
   mappedColumns?: Record<string, string>;
   type?: 'domain-only' | 'single-email' | 'multi-email';
+  originalRowCount?: number; // To keep track of the original row count
 };
 
 /**
@@ -34,7 +36,7 @@ export const parseCSV = (csvString: string): { headers: string[], data: CSVData 
     
     const data: CSVData = [];
     // Process in chunks for better performance with large files
-    const chunkSize = 1000;
+    const chunkSize = 2000; // Increased chunk size for faster processing
     
     for (let i = 0; i < Math.ceil((lines.length - 1) / chunkSize); i++) {
       const start = i * chunkSize + 1;
@@ -234,9 +236,12 @@ export const getMXProvider = async (domain: string): Promise<'google' | 'microso
   }
 };
 
+// Cache for MX results to avoid repeated lookups
+const mxCache: Record<string, 'google' | 'microsoft' | 'other'> = {};
+
 /**
  * Process a batch of domains to get MX records
- * Processes in batches of 10 to avoid rate limiting
+ * Processes in batches of 20 to optimize speed
  */
 export const processMXBatch = async (
   data: CSVData,
@@ -244,7 +249,7 @@ export const processMXBatch = async (
   updateProgress: (processed: number) => void
 ): Promise<CSVData> => {
   const result = [...data];
-  const batchSize = 10;
+  const batchSize = 20; // Increased from 10 for faster processing
   const domains = new Set<string>();
   
   // Extract unique domains first
@@ -314,7 +319,7 @@ export const processDomainOnlyCSV = async (
   console.log(`Processing domain-only CSV with ${data.length} rows`);
   
   // Process in chunks for better performance
-  const chunkSize = 500;
+  const chunkSize = 1000; // Increased chunk size for better performance
   for (let i = 0; i < data.length; i += chunkSize) {
     const chunkEnd = Math.min(i + chunkSize, data.length);
     for (let j = i; j < chunkEnd; j++) {
@@ -341,7 +346,7 @@ export const processDomainOnlyCSV = async (
 };
 
 /**
- * Process single email CSV - optimized
+ * Process single email CSV - optimized and fixed
  */
 export const processSingleEmailCSV = async (
   data: CSVData,
@@ -351,29 +356,36 @@ export const processSingleEmailCSV = async (
   updateProgress: (processed: number, total: number, stage: string) => void
 ): Promise<CSVData> => {
   console.log(`Processing single-email CSV with ${data.length} rows`);
+  const originalRowCount = data.length;
   
-  // Stage 1: Remove duplicate emails
-  updateProgress(0, data.length, 'Removing duplicate emails');
+  // Stage 1: Filter out rows with empty emails and remove duplicates
+  updateProgress(0, originalRowCount, 'Filtering email data');
+  
+  // First filter out rows with empty or invalid emails
+  let filteredData = data.filter(row => {
+    const email = (row[emailField] || '').trim();
+    return email !== '' && email.includes('@'); // Basic validation
+  });
+  
+  console.log(`After removing empty emails: ${filteredData.length} rows (removed ${data.length - filteredData.length} rows)`);
+  
+  // Then deduplicate emails
   const uniqueEmails = new Map<string, CSVRow>();
   
-  // First pass: collect all unique emails and their rows
-  data.forEach((row, index) => {
-    const email = row[emailField];
-    if (email) {
-      // Keep only the first occurrence of each email
-      if (!uniqueEmails.has(email.toLowerCase())) {
-        uniqueEmails.set(email.toLowerCase(), row);
-      }
-      
-      if (index % 100 === 0) {
-        updateProgress(index + 1, data.length, 'Removing duplicate emails');
-      }
+  filteredData.forEach((row, index) => {
+    const email = row[emailField].toLowerCase().trim();
+    if (!uniqueEmails.has(email)) {
+      uniqueEmails.set(email, row);
+    }
+    
+    if (index % 100 === 0) {
+      updateProgress(index + 1, originalRowCount, 'Removing duplicate emails');
     }
   });
   
   let uniqueEmailData: CSVData = Array.from(uniqueEmails.values());
-  console.log(`After deduplication: ${uniqueEmailData.length} unique emails (removed ${data.length - uniqueEmailData.length} duplicates)`);
-  updateProgress(uniqueEmailData.length, data.length, 'Removed duplicate emails');
+  console.log(`After deduplication: ${uniqueEmailData.length} unique emails (removed ${filteredData.length - uniqueEmailData.length} duplicates)`);
+  updateProgress(uniqueEmailData.length, originalRowCount, 'Removed duplicate emails');
   
   // Stage 2: Process MX records
   updateProgress(0, uniqueEmailData.length, 'Processing MX records');
@@ -385,7 +397,7 @@ export const processSingleEmailCSV = async (
   
   // Stage 3: Clean company names and websites
   updateProgress(0, processedData.length, 'Cleaning data');
-  const chunkSize = 200;
+  const chunkSize = 500; // Increased for faster processing
   for (let i = 0; i < processedData.length; i += chunkSize) {
     const chunkEnd = Math.min(i + chunkSize, processedData.length);
     
@@ -427,72 +439,91 @@ export const processSingleEmailCSV = async (
   });
   
   // Then filter out domains with more than 5 occurrences
-  const filteredData = processedData.filter(row => {
+  const filteredByDomain = processedData.filter(row => {
     const domain = row['cleaned_website'];
     return !domain || domainCounts[domain] <= 5;
   });
   
-  console.log(`After domain frequency filtering: ${filteredData.length} rows (removed ${processedData.length - filteredData.length} rows)`);
+  console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
   
-  // Stage 5: Add alternative names for duplicate domains - Fix for other_dm_name
-  updateProgress(0, filteredData.length, 'Adding alternative contacts');
-  const domainToNames: Record<string, string[]> = {};
-  const domainToData: Record<string, CSVRow[]> = {};
+  // Stage 5: Add alternative names for duplicate domains - Fixed other_dm_name implementation
+  updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
   
-  // First collect all names by domain and organize by domain
-  filteredData.forEach(row => {
+  // Group rows by domain
+  const domainMap: Record<string, CSVRow[]> = {};
+  
+  filteredByDomain.forEach(row => {
     const domain = row['cleaned_website'];
-    const email = row[emailField];
-    
-    if (domain && domain in domainCounts && domainCounts[domain] > 1) {
-      // Initialize arrays if needed
-      if (!domainToNames[domain]) {
-        domainToNames[domain] = [];
-        domainToData[domain] = [];
+    if (domain && domain.trim() !== '') {
+      if (!domainMap[domain]) {
+        domainMap[domain] = [];
       }
-      
-      const fullName = row['full_name'] || row['fullname'] || '';
-      if (fullName && !isGenericEmail(email)) {
-        domainToNames[domain].push(fullName);
-      }
-      
-      domainToData[domain].push(row);
+      domainMap[domain].push(row);
     }
   });
   
-  // Then distribute names using round-robin for each domain
-  Object.keys(domainToData).forEach(domain => {
-    const rows = domainToData[domain];
-    const names = domainToNames[domain];
+  // Process domains with multiple contacts
+  Object.keys(domainMap).forEach(domain => {
+    const rows = domainMap[domain];
     
-    if (names && names.length > 1) {
-      rows.forEach((row, idx) => {
-        const email = row[emailField];
-        if (!isGenericEmail(email)) {
-          const currentName = row['full_name'] || row['fullname'] || '';
-          if (currentName) {
-            // Find a different name than the current one
-            const otherNames = names.filter(name => name !== currentName);
-            if (otherNames.length > 0) {
-              // Use round-robin to assign alternative names
-              const altNameIndex = idx % otherNames.length;
-              row['other_dm_name'] = otherNames[altNameIndex];
-              console.log(`Assigned other_dm_name: ${otherNames[altNameIndex]} to row with email ${email}`);
-            }
-          }
+    if (rows.length > 1) {
+      // Extract fullnames
+      const fullNames: string[] = [];
+      
+      rows.forEach(row => {
+        // Try to find name from various possible fields
+        let fullName = '';
+        if (row['full_name']) fullName = row['full_name'];
+        else if (row['fullname']) fullName = row['fullname'];
+        else if (row['name']) fullName = row['name'];
+        else if (row['first_name'] && row['last_name']) {
+          fullName = `${row['first_name']} ${row['last_name']}`;
+        }
+        
+        if (fullName && fullName.trim() !== '') {
+          fullNames.push(fullName.trim());
         }
       });
+      
+      if (fullNames.length > 1) {
+        // Assign alternative names using round-robin
+        rows.forEach((row, index) => {
+          // Find current row's name
+          let currentName = '';
+          if (row['full_name']) currentName = row['full_name'];
+          else if (row['fullname']) currentName = row['fullname'];
+          else if (row['name']) currentName = row['name'];
+          else if (row['first_name'] && row['last_name']) {
+            currentName = `${row['first_name']} ${row['last_name']}`;
+          }
+          
+          // Skip if no name found or generic email
+          if (!currentName || isGenericEmail(row[emailField])) {
+            return;
+          }
+          
+          // Find alternative names (excluding current name)
+          const otherNames = fullNames.filter(name => name !== currentName);
+          
+          if (otherNames.length > 0) {
+            // Assign using round-robin
+            const altNameIndex = index % otherNames.length;
+            row['other_dm_name'] = otherNames[altNameIndex];
+            console.log(`Assigned other_dm_name: ${otherNames[altNameIndex]} to row with email ${row[emailField]}`);
+          }
+        });
+      }
     }
   });
   
-  updateProgress(filteredData.length, filteredData.length, 'Complete');
-  console.log(`Single-email processing complete: ${filteredData.length} rows in final output`);
+  updateProgress(filteredByDomain.length, filteredByDomain.length, 'Complete');
+  console.log(`Single-email processing complete: ${filteredByDomain.length} rows in final output (from ${originalRowCount} original rows)`);
   
-  return filteredData;
+  return filteredByDomain;
 };
 
 /**
- * Process multi-email CSV - optimized version
+ * Process multi-email CSV - fixed to handle empty emails and duplicates
  */
 export const processMultiEmailCSV = async (
   data: CSVData,
@@ -500,27 +531,23 @@ export const processMultiEmailCSV = async (
   updateProgress: (processed: number, total: number, stage: string) => void
 ): Promise<CSVData> => {
   console.log(`Processing multi-email CSV with ${data.length} rows`);
+  const originalRowCount = data.length;
   
-  // Identify email columns and their associated metadata columns
+  // Identify email columns
   const emailColumns = Object.keys(mappedColumns).filter(col => col.startsWith('email_'));
-  updateProgress(0, data.length, 'Organizing email data');
+  updateProgress(0, originalRowCount, 'Organizing email data');
   
-  // Reorganize data to ensure each email has associated metadata - use a Map for better deduplication
+  // Reorganize data to ensure each email has associated metadata
   let expandedData: CSVData = [];
-  let totalEmails = 0;
-  const uniqueEmails = new Map<string, CSVRow>();
+  let totalEmailsFound = 0;
   
-  // First expand the data to have one row per email and deduplicate
+  // First expand the data to have one row per email
   data.forEach((row, idx) => {
     emailColumns.forEach(emailCol => {
-      const email = row[mappedColumns[emailCol]];
-      if (!email) return;
-      totalEmails++;
+      const email = (row[mappedColumns[emailCol]] || '').trim();
+      if (!email || !email.includes('@')) return; // Skip invalid emails
       
-      const emailLower = email.toLowerCase();
-      if (uniqueEmails.has(emailLower)) {
-        return; // Skip duplicate emails immediately
-      }
+      totalEmailsFound++;
       
       const prefix = emailCol.split('_')[0] + '_' + emailCol.split('_')[1];
       const newRow: CSVRow = { ...row };
@@ -543,22 +570,37 @@ export const processMultiEmailCSV = async (
         }
       });
       
-      uniqueEmails.set(emailLower, newRow);
+      expandedData.push(newRow);
     });
     
     if (idx % 20 === 0 || idx === data.length - 1) {
-      updateProgress(idx + 1, data.length, 'Organizing email data');
+      updateProgress(idx + 1, originalRowCount, 'Organizing email data');
     }
   });
   
-  expandedData = Array.from(uniqueEmails.values());
+  console.log(`Expanded to ${expandedData.length} email rows (total emails found: ${totalEmailsFound})`);
   
-  console.log(`Expanded to ${expandedData.length} unique email rows (total emails found: ${totalEmails})`);
-  updateProgress(expandedData.length, totalEmails, 'Removed duplicate emails');
+  // Deduplicate emails
+  updateProgress(0, expandedData.length, 'Removing duplicate emails');
+  
+  const uniqueEmails = new Map<string, CSVRow>();
+  expandedData.forEach((row, idx) => {
+    const email = row['email'].toLowerCase().trim();
+    if (!uniqueEmails.has(email)) {
+      uniqueEmails.set(email, row);
+    }
+    
+    if (idx % 100 === 0) {
+      updateProgress(idx + 1, expandedData.length, 'Removing duplicate emails');
+    }
+  });
+  
+  const uniqueEmailData = Array.from(uniqueEmails.values());
+  console.log(`After deduplication: ${uniqueEmailData.length} unique email rows (removed ${expandedData.length - uniqueEmailData.length} duplicates)`);
   
   // Now process as a single email CSV
   return processSingleEmailCSV(
-    expandedData,
+    uniqueEmailData,
     'email',
     mappedColumns['website'] || '',
     mappedColumns['company'] || '',

@@ -37,8 +37,8 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
       return (
         <span className="text-sm text-gray-600">
           {task.result.length} rows in result 
-          {task.result.length !== task.totalRows && (
-            <span className="text-xs text-gray-500 ml-2">(from {task.totalRows} original rows)</span>
+          {task.originalRowCount && task.result.length !== task.originalRowCount && (
+            <span className="text-xs text-gray-500 ml-2">(from {task.originalRowCount} original rows)</span>
           )}
         </span>
       );
@@ -59,7 +59,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
     const columns = Object.keys(sample);
     const totalRows = task.result.length;
     
-    // Count how many rows have other_dm_name
+    // Count how many rows have other_dm_name with values
     const otherDMCount = task.result.filter(row => row.other_dm_name && row.other_dm_name.trim() !== '').length;
     
     return (
@@ -81,6 +81,19 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
               'Alternative contacts column (no alternatives found)'}</li>
           )}
         </ul>
+        
+        {otherDMCount > 0 && (
+          <div className="mt-2 p-2 bg-green-50 rounded border border-green-100">
+            <p className="font-medium text-green-700">Alternative Contact Example:</p>
+            {task.result.find(row => row.other_dm_name && row.other_dm_name.trim() !== '') && (
+              <div className="mt-1 text-xs text-green-800">
+                <p>Contact with alternative: {
+                  task.result.find(row => row.other_dm_name && row.other_dm_name.trim() !== '')?.other_dm_name
+                }</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
