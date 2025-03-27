@@ -7,7 +7,7 @@ import FileUpload from '@/components/FileUpload';
 import ColumnMapping from '@/components/ColumnMapping';
 import ProcessingTasks from '@/components/ProcessingTasks';
 import DataPreview from '@/components/DataPreview';
-import { CSVData, ProcessingTask, processDomainOnlyCSV, processSingleEmailCSV, processMultiEmailCSV } from '@/utils/csvProcessing';
+import { CSVData, ProcessingTask, processDomainOnlyCSV, processSingleEmailCSV, processMultiEmailCSV, inferCSVType } from '@/utils/csvProcessing';
 import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -72,7 +72,7 @@ const Dashboard: React.FC = () => {
       progress: 0,
       totalRows: csvData.length,
       processedRows: 0,
-      type: csvFileType
+      type: csvFileType as 'domain-only' | 'single-email' | 'multi-email' // Fix the type error
     };
     
     setTasks(prev => [...prev, newTask]);
@@ -152,7 +152,8 @@ const Dashboard: React.FC = () => {
         progress: 1,
         processedRows: result.length,
         totalRows: csvData.length,  // Keep the original total for reference
-        result
+        result,
+        mappedColumns
       });
       
       // Show preview of the latest processed task

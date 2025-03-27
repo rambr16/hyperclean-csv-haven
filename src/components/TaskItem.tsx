@@ -2,7 +2,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Download } from 'lucide-react';
+import { Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { ProcessingTask } from '@/utils/csvProcessing';
 import { downloadCSV } from '@/utils/csvProcessing';
 
@@ -11,6 +11,8 @@ interface TaskItemProps {
 }
 
 const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
+  const [expanded, setExpanded] = React.useState(false);
+  
   const handleDownload = () => {
     if (task.result) {
       downloadCSV(task.result, `processed_${task.fileName}`);
@@ -46,6 +48,40 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
       <span className="text-sm text-gray-600">
         {task.processedRows} / {task.totalRows} rows
       </span>
+    );
+  };
+  
+  // Get information about available columns in the result
+  const getResultInfo = () => {
+    if (!task.result || task.result.length === 0) return null;
+    
+    const sample = task.result[0];
+    const columns = Object.keys(sample);
+    const totalRows = task.result.length;
+    
+    // Count how many rows have other_dm_name
+    const otherDMCount = task.result.filter(row => row.other_dm_name && row.other_dm_name.trim() !== '').length;
+    
+    return (
+      <div className="mt-3 text-xs text-gray-600 space-y-1">
+        <p>Result contains {columns.length} columns including:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          {columns.includes('cleaned_website') && (
+            <li>Cleaned website domains</li>
+          )}
+          {columns.includes('mx_provider') && (
+            <li>Email MX providers</li>
+          )}
+          {columns.includes('cleaned_company_name') && (
+            <li>Cleaned company names</li>
+          )}
+          {columns.includes('other_dm_name') && (
+            <li>{otherDMCount > 0 ? 
+              `Alternative contacts (${otherDMCount} rows)` : 
+              'Alternative contacts column (no alternatives found)'}</li>
+          )}
+        </ul>
+      </div>
     );
   };
   
@@ -90,20 +126,38 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
           )}
           
           {task.status === 'complete' && (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-green-600">Processing complete</p>
-                {renderCountInfo()}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-green-600">Processing complete</p>
+                  {renderCountInfo()}
+                </div>
+                <div className="flex space-x-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setExpanded(!expanded)}
+                    className="text-gray-500"
+                  >
+                    {expanded ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="text-hyperke-blue hover:bg-hyperke-blue/10 hover:text-hyperke-darkBlue"
+                    onClick={handleDownload}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Result
+                  </Button>
+                </div>
               </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="text-hyperke-blue hover:bg-hyperke-blue/10 hover:text-hyperke-darkBlue"
-                onClick={handleDownload}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download Result
-              </Button>
+              
+              {expanded && getResultInfo()}
             </div>
           )}
         </div>
