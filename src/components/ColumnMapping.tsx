@@ -103,7 +103,8 @@ const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColu
                   <SelectValue placeholder={`Select ${field.label}`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">-- Select Column --</SelectItem>
+                  {/* Replace the empty string value with a non-empty placeholder value */}
+                  <SelectItem value="_none" disabled>-- Select Column --</SelectItem>
                   {headers.map((header) => (
                     <SelectItem key={header} value={header}>
                       {header}
