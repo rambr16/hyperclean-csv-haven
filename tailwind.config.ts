@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -61,7 +62,15 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
-				}
+				},
+        hyperke: {
+          blue: '#2563eb',
+          lightBlue: '#3b82f6',
+          darkBlue: '#1e40af',
+          gray: '#f3f4f6',
+          darkGray: '#6b7280',
+          lightGray: '#f9fafb',
+        }
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -84,12 +93,45 @@ export default {
 					to: {
 						height: '0'
 					}
-				}
+				},
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' }
+        },
+        'fade-out': {
+          '0%': { opacity: '1' },
+          '100%': { opacity: '0' }
+        },
+        'slide-up': {
+          '0%': { transform: 'translateY(10px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' }
+        },
+        'spin-slow': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' }
+        },
+        'progress': {
+          '0%': { width: '0%' },
+          '100%': { width: '100%' }
+        }
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
-			}
+				'accordion-up': 'accordion-up 0.2s ease-out',
+        'fade-in': 'fade-in 0.3s ease-out',
+        'fade-out': 'fade-out 0.3s ease-out',
+        'slide-up': 'slide-up 0.4s ease-out',
+        'spin-slow': 'spin-slow 2s linear infinite',
+        'progress': 'progress 1s ease-in-out forwards'
+			},
+      backdropFilter: {
+        'none': 'none',
+        'blur': 'blur(10px)',
+      },
+      boxShadow: {
+        'glass': '0 4px 30px rgba(0, 0, 0, 0.1)',
+        'glass-hover': '0 4px 30px rgba(0, 0, 0, 0.15)',
+      }
 		}
 	},
 	plugins: [require("tailwindcss-animate")],
