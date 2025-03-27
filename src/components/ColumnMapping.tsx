@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,6 +13,75 @@ interface ColumnMappingProps {
 
 const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColumnsMapped }) => {
   const [mappedColumns, setMappedColumns] = useState<Record<string, string>>({});
+  
+  // Auto-map columns based on headers and file type
+  useEffect(() => {
+    const autoMap: Record<string, string> = {};
+    
+    // Common patterns to look for in headers
+    const patterns = {
+      email: /^email$|mail|e-mail|e_mail/i,
+      website: /^website$|^domain$|^url$|^site$/i,
+      company: /^company$|^organization$|^org$|^company.?name$/i,
+      fullname: /^fullname$|^full.?name$|^name$/i,
+    };
+    
+    // Handle multi-email columns
+    const emailColumns = headers.filter(h => h.match(/^email_\d+$/i));
+    
+    if (fileType === 'domain-only') {
+      // Find domain/website column
+      const websiteColumn = headers.find(h => patterns.website.test(h));
+      if (websiteColumn) {
+        autoMap['website'] = websiteColumn;
+      }
+    } 
+    else if (fileType === 'single-email') {
+      // Find email column
+      const emailColumn = headers.find(h => patterns.email.test(h));
+      if (emailColumn) {
+        autoMap['email'] = emailColumn;
+      }
+      
+      // Find website column
+      const websiteColumn = headers.find(h => patterns.website.test(h));
+      if (websiteColumn) {
+        autoMap['website'] = websiteColumn;
+      }
+      
+      // Find company column
+      const companyColumn = headers.find(h => patterns.company.test(h));
+      if (companyColumn) {
+        autoMap['company'] = companyColumn;
+      }
+      
+      // Find fullname column
+      const fullnameColumn = headers.find(h => patterns.fullname.test(h));
+      if (fullnameColumn) {
+        autoMap['fullname'] = fullnameColumn;
+      }
+    } 
+    else if (fileType === 'multi-email') {
+      // Map all email_X columns
+      emailColumns.forEach(col => {
+        autoMap[col] = col;
+      });
+      
+      // Find website column
+      const websiteColumn = headers.find(h => patterns.website.test(h));
+      if (websiteColumn) {
+        autoMap['website'] = websiteColumn;
+      }
+      
+      // Find company column
+      const companyColumn = headers.find(h => patterns.company.test(h));
+      if (companyColumn) {
+        autoMap['company'] = companyColumn;
+      }
+    }
+    
+    setMappedColumns(autoMap);
+  }, [headers, fileType]);
   
   const handleColumnSelect = (columnType: string, value: string) => {
     setMappedColumns(prev => ({
@@ -60,7 +129,7 @@ const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColu
         ];
       case 'multi-email':
         // First find all email columns
-        const emailColumns = headers.filter(h => h.match(/email_\d+/i));
+        const emailColumns = headers.filter(h => h.match(/email_\d+$/i));
         const fields = emailColumns.map(col => ({ 
           id: col, 
           label: `${col.charAt(0).toUpperCase() + col.slice(1)} Column`, 
@@ -103,7 +172,7 @@ const ColumnMapping: React.FC<ColumnMappingProps> = ({ headers, fileType, onColu
                   <SelectValue placeholder={`Select ${field.label}`} />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Replace the empty string value with a non-empty placeholder value */}
+                  {/* Use a non-empty placeholder value */}
                   <SelectItem value="_none" disabled>-- Select Column --</SelectItem>
                   {headers.map((header) => (
                     <SelectItem key={header} value={header}>

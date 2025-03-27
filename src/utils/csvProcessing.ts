@@ -24,13 +24,17 @@ export type ProcessingTask = {
  */
 export const parseCSV = (csvString: string): { headers: string[], data: CSVData } => {
   try {
-    const lines = csvString.split('\n');
+    // Split by newline, filter out empty lines
+    const lines = csvString.split('\n').filter(line => line.trim().length > 0);
+    
+    if (lines.length === 0) {
+      return { headers: [], data: [] };
+    }
+    
     const headers = lines[0].split(',').map(header => header.trim());
     
     const data: CSVData = [];
     for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      
       // Handle case where fields might contain commas inside quotes
       const row: CSVRow = {};
       let fields = [];
@@ -64,6 +68,7 @@ export const parseCSV = (csvString: string): { headers: string[], data: CSVData 
       data.push(row);
     }
     
+    console.log(`Parsed CSV: ${headers.length} columns, ${data.length} rows`);
     return { headers, data };
   } catch (error) {
     console.error('Error parsing CSV:', error);
@@ -96,7 +101,7 @@ export const dataToCSV = (headers: string[], data: CSVData): string => {
  */
 export const inferCSVType = (headers: string[]): 'domain-only' | 'single-email' | 'multi-email' | 'unknown' => {
   // Check for multi-email pattern
-  const emailColumns = headers.filter(h => h.match(/email_[1-9]/i));
+  const emailColumns = headers.filter(h => h.match(/email_\d+$/i));
   if (emailColumns.length >= 2) {
     return 'multi-email';
   }
@@ -175,11 +180,13 @@ export const cleanCompanyName = (name: string): string => {
  */
 export const getMXProvider = async (domain: string): Promise<'google' | 'microsoft' | 'other'> => {
   try {
+    console.log(`Fetching MX records for domain: ${domain}`);
     const response = await fetch(`https://dns.google/resolve?name=${domain}&type=MX`);
     const data = await response.json();
     
     if (data.Answer) {
       const mxRecords = data.Answer.map((record: any) => record.data.toLowerCase());
+      console.log(`MX records for ${domain}:`, mxRecords);
       
       if (mxRecords.some((record: string) => record.includes('google'))) {
         return 'google';
@@ -209,18 +216,22 @@ export const processMXBatch = async (
   const domains = new Set<string>();
   
   // Extract unique domains first
+  console.log(`Processing MX batch for ${data.length} rows, email field: ${emailField}`);
   data.forEach(row => {
     const email = row[emailField];
     if (email) {
       try {
         const domain = email.split('@')[1];
-        domains.add(domain);
+        if (domain) {
+          domains.add(domain);
+        }
       } catch (error) {
         // Skip invalid emails
       }
     }
   });
   
+  console.log(`Found ${domains.size} unique domains to check`);
   const uniqueDomains = Array.from(domains);
   const mxCache: Record<string, 'google' | 'microsoft' | 'other'> = {};
   
@@ -269,6 +280,7 @@ export const processDomainOnlyCSV = async (
   updateProgress: (processed: number, total: number) => void
 ): Promise<CSVData> => {
   const result: CSVData = [];
+  console.log(`Processing domain-only CSV with ${data.length} rows`);
   
   for (let i = 0; i < data.length; i++) {
     const row = { ...data[i] };
@@ -288,6 +300,7 @@ export const processDomainOnlyCSV = async (
     updateProgress(i + 1, data.length);
   }
   
+  console.log(`Domain-only processing complete: ${result.length} rows processed`);
   return result;
 };
 
@@ -301,22 +314,31 @@ export const processSingleEmailCSV = async (
   companyField: string,
   updateProgress: (processed: number, total: number, stage: string) => void
 ): Promise<CSVData> => {
+  console.log(`Processing single-email CSV with ${data.length} rows`);
+  
   // Stage 1: Remove duplicate emails
   updateProgress(0, data.length, 'Removing duplicate emails');
   const uniqueEmails = new Set<string>();
-  let dedupedData = data.filter(row => {
+  let uniqueEmailData: CSVData = [];
+  
+  // First pass: collect all unique emails and their rows
+  data.forEach(row => {
     const email = row[emailField];
-    if (!email || uniqueEmails.has(email)) return false;
-    uniqueEmails.add(email);
-    return true;
+    if (email && !uniqueEmails.has(email.toLowerCase())) {
+      uniqueEmails.add(email.toLowerCase());
+      uniqueEmailData.push(row);
+    }
   });
   
+  console.log(`After deduplication: ${uniqueEmailData.length} unique emails (removed ${data.length - uniqueEmailData.length} duplicates)`);
+  updateProgress(uniqueEmailData.length, data.length, 'Removed duplicate emails');
+  
   // Stage 2: Process MX records
-  updateProgress(0, dedupedData.length, 'Processing MX records');
+  updateProgress(0, uniqueEmailData.length, 'Processing MX records');
   let processedData = await processMXBatch(
-    dedupedData,
+    uniqueEmailData,
     emailField,
-    (processed) => updateProgress(processed, dedupedData.length, 'Processing MX records')
+    (processed) => updateProgress(processed, uniqueEmailData.length, 'Processing MX records')
   );
   
   // Stage 3: Clean company names and websites
@@ -332,6 +354,14 @@ export const processSingleEmailCSV = async (
     // Clean website
     if (websiteField && row[websiteField]) {
       row['cleaned_website'] = cleanWebsiteUrl(row[websiteField]);
+    } else if (row[emailField]) {
+      // Extract domain from email if website field is not available
+      try {
+        const emailDomain = row[emailField].split('@')[1];
+        row['cleaned_website'] = emailDomain;
+      } catch (error) {
+        row['cleaned_website'] = '';
+      }
     }
     
     updateProgress(i + 1, processedData.length, 'Cleaning data');
@@ -340,6 +370,8 @@ export const processSingleEmailCSV = async (
   // Stage 4: Count domain occurrences and filter out domains with more than 5 occurrences
   updateProgress(0, processedData.length, 'Analyzing domain frequencies');
   const domainCounts: Record<string, number> = {};
+  
+  // First count all domains
   processedData.forEach(row => {
     const domain = row['cleaned_website'];
     if (domain) {
@@ -347,17 +379,20 @@ export const processSingleEmailCSV = async (
     }
   });
   
-  processedData = processedData.filter(row => {
+  // Then filter out domains with more than 5 occurrences
+  const filteredData = processedData.filter(row => {
     const domain = row['cleaned_website'];
     return !domain || domainCounts[domain] <= 5;
   });
   
+  console.log(`After domain frequency filtering: ${filteredData.length} rows (removed ${processedData.length - filteredData.length} rows)`);
+  
   // Stage 5: Add alternative names for duplicate domains
-  updateProgress(0, processedData.length, 'Adding alternative contacts');
+  updateProgress(0, filteredData.length, 'Adding alternative contacts');
   const domainToNames: Record<string, string[]> = {};
   
   // First collect all names by domain
-  processedData.forEach(row => {
+  filteredData.forEach(row => {
     const domain = row['cleaned_website'];
     const email = row[emailField];
     
@@ -375,7 +410,7 @@ export const processSingleEmailCSV = async (
   // Then distribute names using round-robin
   const domainNameIndex: Record<string, number> = {};
   
-  processedData.forEach(row => {
+  filteredData.forEach(row => {
     const domain = row['cleaned_website'];
     const email = row[emailField];
     
@@ -403,9 +438,10 @@ export const processSingleEmailCSV = async (
     }
   });
   
-  updateProgress(processedData.length, processedData.length, 'Complete');
+  updateProgress(filteredData.length, filteredData.length, 'Complete');
+  console.log(`Single-email processing complete: ${filteredData.length} rows in final output`);
   
-  return processedData;
+  return filteredData;
 };
 
 /**
@@ -416,17 +452,22 @@ export const processMultiEmailCSV = async (
   mappedColumns: Record<string, string>,
   updateProgress: (processed: number, total: number, stage: string) => void
 ): Promise<CSVData> => {
+  console.log(`Processing multi-email CSV with ${data.length} rows`);
+  
   // Identify email columns and their associated metadata columns
   const emailColumns = Object.keys(mappedColumns).filter(col => col.startsWith('email_'));
   updateProgress(0, data.length, 'Organizing email data');
   
   // Reorganize data to ensure each email has associated metadata
-  let reorganizedData: CSVData = [];
+  let expandedData: CSVData = [];
+  let totalEmails = 0;
   
+  // First expand the data to have one row per email
   data.forEach((row, idx) => {
     emailColumns.forEach(emailCol => {
-      const email = row[emailCol];
+      const email = row[mappedColumns[emailCol]];
       if (!email) return;
+      totalEmails++;
       
       const prefix = emailCol.split('_')[0] + '_' + emailCol.split('_')[1];
       const newRow: CSVRow = { ...row };
@@ -449,18 +490,36 @@ export const processMultiEmailCSV = async (
         }
       });
       
-      reorganizedData.push(newRow);
+      expandedData.push(newRow);
     });
     
     updateProgress(idx + 1, data.length, 'Organizing email data');
   });
   
+  console.log(`Expanded ${data.length} rows to ${expandedData.length} rows with individual emails`);
+  
+  // Stage 1: Remove duplicate emails
+  updateProgress(0, expandedData.length, 'Removing duplicate emails');
+  const uniqueEmails = new Set<string>();
+  let uniqueEmailData: CSVData = [];
+  
+  // Collect unique emails
+  expandedData.forEach(row => {
+    const email = row['email'];
+    if (email && !uniqueEmails.has(email.toLowerCase())) {
+      uniqueEmails.add(email.toLowerCase());
+      uniqueEmailData.push(row);
+    }
+  });
+  
+  console.log(`After deduplication: ${uniqueEmailData.length} unique emails (removed ${expandedData.length - uniqueEmailData.length} duplicates)`);
+  
   // Now process as a single email CSV
   return processSingleEmailCSV(
-    reorganizedData,
+    uniqueEmailData,
     'email',
-    mappedColumns['website'] || 'website',
-    mappedColumns['company'] || 'company',
+    mappedColumns['website'] || '',
+    mappedColumns['company'] || '',
     updateProgress
   );
 };

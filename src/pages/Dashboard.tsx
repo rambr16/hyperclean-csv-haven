@@ -48,6 +48,7 @@ const Dashboard: React.FC = () => {
     data: CSVData,
     fileType: 'domain-only' | 'single-email' | 'multi-email' | 'unknown'
   ) => {
+    console.log(`File uploaded: ${fileName}, type: ${fileType}, rows: ${data.length}`);
     setCsvHeaders(headers);
     setCsvData(data);
     setCsvFileName(fileName);
@@ -57,6 +58,7 @@ const Dashboard: React.FC = () => {
   };
   
   const handleColumnsMapped = (mappedColumns: Record<string, string>) => {
+    console.log('Columns mapped:', mappedColumns);
     setMappedColumns(mappedColumns);
     setShowMapping(false);
     
@@ -69,7 +71,8 @@ const Dashboard: React.FC = () => {
       status: 'pending',
       progress: 0,
       totalRows: csvData.length,
-      processedRows: 0
+      processedRows: 0,
+      type: csvFileType
     };
     
     setTasks(prev => [...prev, newTask]);
@@ -141,21 +144,21 @@ const Dashboard: React.FC = () => {
         );
       }
       
+      console.log(`Processing complete: ${result.length} rows in final result`);
+      
       // Update task to complete
       updateTaskProgress(taskId, { 
         status: 'complete',
         progress: 1,
         processedRows: result.length,
-        totalRows: result.length,
+        totalRows: csvData.length,  // Keep the original total for reference
         result
       });
       
-      // If this is the only task, show preview
-      if (tasks.length === 0) {
-        setPreviewData(result);
-      }
+      // Show preview of the latest processed task
+      setPreviewData(result);
       
-      toast.success('CSV processing completed successfully');
+      toast.success(`CSV processing completed. Processed ${csvData.length} rows, resulted in ${result.length} rows after cleaning.`);
     } catch (error) {
       console.error('Error processing CSV:', error);
       updateTaskProgress(taskId, { status: 'error' });

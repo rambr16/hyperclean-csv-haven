@@ -30,6 +30,25 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
     });
   };
   
+  const renderCountInfo = () => {
+    if (task.status === 'complete' && task.result) {
+      return (
+        <span className="text-sm text-gray-600">
+          {task.result.length} rows in result 
+          {task.result.length !== task.totalRows && (
+            <span className="text-xs text-gray-500 ml-2">(from {task.totalRows} original rows)</span>
+          )}
+        </span>
+      );
+    }
+    
+    return (
+      <span className="text-sm text-gray-600">
+        {task.processedRows} / {task.totalRows} rows
+      </span>
+    );
+  };
+  
   return (
     <Card className={`w-full mb-4 overflow-hidden transition-all duration-300 ${
       task.status === 'complete' ? 'border-green-300 shadow-md' : 
@@ -38,16 +57,17 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
       <CardContent className="p-4">
         <div className="flex flex-col space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-gray-800 truncate max-w-md">{task.fileName}</h3>
+            <h3 className="font-medium text-gray-800 truncate max-w-md">
+              {task.fileName}
+              <span className="text-xs text-gray-500 ml-2">({task.type || 'unknown'})</span>
+            </h3>
             <span className="text-xs text-gray-500">Uploaded: {formatDate(task.uploadTime)}</span>
           </div>
           
           {task.status === 'processing' && (
             <div className="space-y-1">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">
-                  {task.processedRows} / {task.totalRows} rows
-                </span>
+                {renderCountInfo()}
                 <span className="text-gray-600">
                   {Math.round((task.progress || 0) * 100)}%
                 </span>
@@ -71,7 +91,10 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
           
           {task.status === 'complete' && (
             <div className="flex items-center justify-between">
-              <p className="text-sm text-green-600">Processing complete</p>
+              <div>
+                <p className="text-sm text-green-600">Processing complete</p>
+                {renderCountInfo()}
+              </div>
               <Button 
                 variant="outline" 
                 size="sm" 
