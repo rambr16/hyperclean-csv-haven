@@ -759,78 +759,55 @@ export const processMultiEmailCSV = async (
       // Filter valid contacts (have name and non-generic email)
       const validContacts = rows.filter(row => {
         const email = row['email'] || '';
-        const fullName = row['fullName'] || '';
-        const firstName = row['firstName'] || '';
-        const lastName = row['lastName'] || '';
+        const hasFullName = row['fullName'] && row['fullName'].trim() !== '';
+        const hasFirstAndLastName = (row['firstName'] && row['firstName'].trim() !== '') && 
+                                   (row['lastName'] && row['lastName'].trim() !== '');
         
         // Contact must have a name and non-generic email
-        return (fullName || (firstName && lastName)) && !isGenericEmail(email);
+        return (hasFullName || hasFirstAndLastName) && !isGenericEmail(email);
       });
       
       if (validContacts.length > 1) {
         console.log(`Domain ${domain}: ${validContacts.length} valid contacts found for round-robin assignment`);
         
         // Assign other_dm_name in round-robin fashion
-        validContacts.forEach((contact, index) => {
+        validContacts.forEach((currentContact, index) => {
           // Get the next contact in the array (round-robin style)
           const nextIndex = (index + 1) % validContacts.length;
           const nextContact = validContacts[nextIndex];
           
-          // Get the full name from nextContact
-          let otherName = '';
-          let otherTitle = '';
+          // Get the person's full name from nextContact, NOT the company name
+          let otherDmName = '';
           
-          // Try to find name from various possible fields
-          for (const key of Object.keys(nextContact)) {
-            const lowerKey = key.toLowerCase();
-            if ((lowerKey === 'full_name' || lowerKey === 'fullname' || lowerKey === 'name') && nextContact[key]) {
-              otherName = nextContact[key].trim();
-              break;
-            }
+          // First try to get the full name directly
+          if (nextContact['fullName'] && nextContact['fullName'].trim() !== '') {
+            otherDmName = nextContact['fullName'].trim();
+          } 
+          // If no fullName, try concatenating first and last name
+          else if (nextContact['firstName'] && nextContact['lastName']) {
+            otherDmName = `${nextContact['firstName'].trim()} ${nextContact['lastName'].trim()}`;
           }
           
-          if (!otherName) {
-            // Try to combine first_name and last_name
-            let firstName = '';
-            let lastName = '';
-            
-            for (const key of Object.keys(nextContact)) {
-              const lowerKey = key.toLowerCase();
-              if ((lowerKey === 'first_name' || lowerKey === 'firstname') && nextContact[key]) {
-                firstName = nextContact[key].trim();
-              }
-              if ((lowerKey === 'last_name' || lowerKey === 'lastname') && nextContact[key]) {
-                lastName = nextContact[key].trim();
-              }
-            }
-            
-            if (firstName && lastName) {
-              otherName = `${firstName} ${lastName}`;
-            }
-          }
+          // Get title if available
+          let otherDmTitle = nextContact['title'] || '';
           
-          // Get title
-          for (const key of Object.keys(nextContact)) {
-            const lowerKey = key.toLowerCase();
-            if ((lowerKey === 'title' || lowerKey === 'job_title' || lowerKey === 'jobtitle') && nextContact[key]) {
-              otherTitle = nextContact[key].trim();
-              break;
+          // Only set other_dm_name if we have a valid person name
+          if (otherDmName && otherDmName.trim() !== '') {
+            // Make sure we're not using company name as the person's name
+            // Additional check to avoid using company names
+            if (nextContact['company'] && 
+                otherDmName.toLowerCase() === nextContact['company'].toLowerCase()) {
+              console.log(`Warning: Skipping assignment because name "${otherDmName}" matches company name`);
+            } else {
+              currentContact['other_dm_name'] = otherDmName;
+              currentContact['other_dm_title'] = otherDmTitle;
+              currentContact['other_dm_email'] = nextContact['email'] || '';
+              
+              console.log(`Assigned other_dm_name: ${otherDmName} to row with email ${currentContact['email']}`);
+              enrichedCount++;
             }
-          }
-          
-          // Set other_dm_name
-          if (otherName) {
-            contact['other_dm_name'] = otherName;
-            
-            if (otherTitle) {
-              contact['other_dm_title'] = otherTitle;
-            }
-            
-            // Get email - Fix: Use 'email' instead of emailField
-            contact['other_dm_email'] = nextContact['email'] || '';
-            
-            console.log(`Assigned other_dm_name: ${otherName} to row with email ${contact['email']}`);
-            enrichedCount++;
+          } else {
+            console.log(`Unable to find a valid name for contact with email ${nextContact['email']}`);
           }
         });
       } else {
