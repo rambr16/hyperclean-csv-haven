@@ -21,25 +21,20 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     return null;
   }
   
-  const allHeaders = Object.keys(data[0]);
+  // Create a stable copy of the data to prevent modification of props directly
+  const stableData = useMemo(() => {
+    return [...data];
+  }, [data]);
+  
+  // Get all headers from the data once
+  const allHeaders = useMemo(() => {
+    return Object.keys(stableData[0] || {});
+  }, [stableData]);
   
   // Check if there are any rows with other_dm_name
   const hasAlternativeContacts = useMemo(() => {
-    return data.some(row => row.other_dm_name && row.other_dm_name.trim() !== '');
-  }, [data]);
-  
-  // Ensure other_dm_name is always included in the data structure, even if empty
-  const ensureOtherDmNameExists = useMemo(() => {
-    if (!allHeaders.includes('other_dm_name')) {
-      // Add other_dm_name field to all rows if it doesn't exist
-      data.forEach(row => {
-        row['other_dm_name'] = '';
-      });
-      // Add other_dm_name to allHeaders
-      allHeaders.push('other_dm_name');
-    }
-    return true;
-  }, [data, allHeaders]);
+    return stableData.some(row => row.other_dm_name && row.other_dm_name.trim() !== '');
+  }, [stableData]);
   
   // Organize headers to show important columns first
   const priorityHeaders = [
@@ -48,18 +43,27 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     'other_dm_name', 'other_dm_email', 'other_dm_title', 'mx_provider'
   ];
   
-  const prioritizedHeaders = useMemo(() => [
-    ...priorityHeaders.filter(h => allHeaders.includes(h) || h === 'other_dm_name'),
-    ...allHeaders.filter(h => !priorityHeaders.includes(h))
-  ], [allHeaders]);
+  const prioritizedHeaders = useMemo(() => {
+    // Make sure other_dm_name is included even if not in allHeaders
+    const uniqueHeaders = new Set([...allHeaders]);
+    if (!uniqueHeaders.has('other_dm_name')) {
+      uniqueHeaders.add('other_dm_name');
+    }
+    
+    // Sort the headers with priority headers first
+    return [
+      ...priorityHeaders.filter(h => uniqueHeaders.has(h)),
+      ...Array.from(uniqueHeaders).filter(h => !priorityHeaders.includes(h))
+    ];
+  }, [allHeaders]);
   
   const handleDownload = useCallback(() => {
-    downloadCSV(data, `processed_${fileName}`);
-  }, [data, fileName]);
+    downloadCSV(stableData, `processed_${fileName}`);
+  }, [stableData, fileName]);
   
   const handleLoadMore = useCallback(() => {
-    setVisibleRows(prev => Math.min(prev + 10, data.length));
-  }, [data.length]);
+    setVisibleRows(prev => Math.min(prev + 10, stableData.length));
+  }, [stableData.length]);
   
   const handleSortByColumn = useCallback((header: string) => {
     if (sortColumn === header) {
@@ -74,16 +78,17 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   
   // Memoize sorted data to avoid unnecessary recalculations
   const sortedData = useMemo(() => {
-    if (!sortColumn) return data;
+    if (!sortColumn) return stableData;
     
-    return [...data].sort((a, b) => {
-      const valueA = a[sortColumn] || '';
-      const valueB = b[sortColumn] || '';
+    return [...stableData].sort((a, b) => {
+      // Safely access properties that might not exist
+      const valueA = a[sortColumn] !== undefined ? a[sortColumn] : '';
+      const valueB = b[sortColumn] !== undefined ? b[sortColumn] : '';
       
-      const comparison = valueA.localeCompare(valueB, undefined, { sensitivity: 'base' });
+      const comparison = String(valueA).localeCompare(String(valueB), undefined, { sensitivity: 'base' });
       return sortDirection === 'asc' ? comparison : -comparison;
     });
-  }, [data, sortColumn, sortDirection]);
+  }, [stableData, sortColumn, sortDirection]);
   
   const handleHighlightDomain = useCallback((domain: string) => {
     setHighlightedDomain(highlightedDomain === domain ? null : domain);
@@ -93,7 +98,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     <Card className="w-full mt-8 shadow-sm animate-fade-in animate-delay-200">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div>
-          <CardTitle className="text-xl">Preview ({data.length} rows processed)</CardTitle>
+          <CardTitle className="text-xl">Preview ({stableData.length} rows processed)</CardTitle>
           {hasAlternativeContacts && (
             <p className="text-sm text-green-600 flex items-center mt-1">
               <Users className="h-4 w-4 mr-1" />
@@ -149,6 +154,18 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                     className={`hover:bg-gray-50 ${isHighlighted ? 'bg-blue-50' : ''} ${hasAlternativeContact ? 'border-l-2 border-green-300' : ''}`}
                   >
                     {prioritizedHeaders.map(header => {
+                      // Check if this row has this property, if not return empty cell
+                      if (header === 'other_dm_name' && !(header in row)) {
+                        return (
+                          <td 
+                            key={`${rowIndex}-${header}`} 
+                            className="px-3 py-2 text-xs text-gray-400"
+                          >
+                            null
+                          </td>
+                        );
+                      }
+                      
                       const value = row[header] || '';
                       
                       // Highlight domains with clickable behavior
@@ -164,7 +181,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                         );
                       }
                       
-                      // Highlight other_dm_name relationships - also show when empty
+                      // Highlight other_dm_name relationships
                       if (header === 'other_dm_name') {
                         return (
                           <td 
@@ -200,14 +217,14 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
           </table>
         </div>
         
-        {visibleRows < data.length && (
+        {visibleRows < stableData.length && (
           <div className="flex justify-center mt-4">
             <Button 
               variant="outline" 
               size="sm"
               onClick={handleLoadMore}
             >
-              Load More ({Math.min(visibleRows + 10, data.length) - visibleRows} more rows)
+              Load More ({Math.min(visibleRows + 10, stableData.length) - visibleRows} more rows)
             </Button>
           </div>
         )}
