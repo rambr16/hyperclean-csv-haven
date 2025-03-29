@@ -25,7 +25,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   const stableData = useMemo(() => {
     return data.map(row => ({
       ...row,
-      // Ensure other_dm_name exists in every row
+      // Ensure other_dm fields exist in every row
       other_dm_name: row.other_dm_name !== undefined ? row.other_dm_name : '',
       other_dm_email: row.other_dm_email !== undefined ? row.other_dm_email : '',
       other_dm_title: row.other_dm_title !== undefined ? row.other_dm_title : '',
@@ -40,7 +40,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
       Object.keys(row).forEach(key => headerSet.add(key));
     });
     
-    // Ensure other_dm_name is in the headers even if it's not in any row
+    // Ensure other_dm fields are in the headers even if they're not in any row
     headerSet.add('other_dm_name');
     headerSet.add('other_dm_email');
     headerSet.add('other_dm_title');
@@ -56,6 +56,11 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     return stableData.some(row => row.other_dm_name && row.other_dm_name.trim() !== '');
   }, [stableData]);
   
+  // Count how many rows have alternative contacts
+  const alternativeContactCount = useMemo(() => {
+    return stableData.filter(row => row.other_dm_name && row.other_dm_name.trim() !== '').length;
+  }, [stableData]);
+  
   // Organize headers to show important columns first
   const priorityHeaders = [
     'email', 'fullName', 'full_name', 'firstName', 'first_name', 'lastName', 'last_name', 
@@ -64,7 +69,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   ];
   
   const prioritizedHeaders = useMemo(() => {
-    // Make sure other_dm_name is included in headers
+    // Make sure other_dm fields are included in headers
     const uniqueHeaders = new Set([...allHeaders]);
     
     // Sort the headers with priority headers first
@@ -75,7 +80,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
   }, [allHeaders]);
   
   const handleDownload = useCallback(() => {
-    // Make sure our updated data with other_dm_name is downloaded
+    // Make sure our updated data with other_dm fields is downloaded
     downloadCSV(stableData, `processed_${fileName}`);
   }, [stableData, fileName]);
   
@@ -120,7 +125,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
           {hasAlternativeContacts && (
             <p className="text-sm text-green-600 flex items-center mt-1">
               <Users className="h-4 w-4 mr-1" />
-              Alternative contacts found and assigned
+              Found {alternativeContactCount} alternative contacts
             </p>
           )}
         </div>
@@ -172,7 +177,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                     className={`hover:bg-gray-50 ${isHighlighted ? 'bg-blue-50' : ''} ${hasAlternativeContact ? 'border-l-2 border-green-300' : ''}`}
                   >
                     {prioritizedHeaders.map(header => {
-                      // Special handling for other_dm_name to always display it
+                      // Special handling for other_dm fields to always display them
                       if (header === 'other_dm_name' || header === 'other_dm_email' || header === 'other_dm_title') {
                         const value = row[header] || '';
                         
@@ -202,6 +207,21 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                             onClick={() => handleHighlightDomain(row[header])}
                           >
                             {row[header]}
+                          </td>
+                        );
+                      }
+                      
+                      // Special highlighting for MX provider
+                      if (header === 'mx_provider') {
+                        return (
+                          <td 
+                            key={`${rowIndex}-${header}`} 
+                            className={`px-3 py-2 text-xs ${
+                              row[header] && row[header] !== 'Unknown' && row[header] !== 'Custom' ? 
+                              'text-blue-600 font-medium' : 'text-gray-500'
+                            }`}
+                          >
+                            {row[header] || '-'}
                           </td>
                         );
                       }

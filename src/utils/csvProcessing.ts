@@ -121,7 +121,7 @@ export const processDomainOnlyCSV = async (
   websiteColumn: string,
   onProgress: (processed: number) => void
 ): Promise<CSVData> => {
-  // Create a copy of the data to avoid modifying the original
+  // Create a deep copy of the data to avoid modifying the original
   const result: CSVData = JSON.parse(JSON.stringify(data));
   const totalRows = data.length;
   
@@ -188,6 +188,11 @@ export const processSingleEmailCSV = async (
       row['mx_provider'] = getMxProviderFromEmail(row[emailColumn]);
     }
     
+    // Initialize other_dm fields to ensure they exist in all rows
+    row['other_dm_name'] = '';
+    row['other_dm_email'] = '';
+    row['other_dm_title'] = '';
+    
     // Update progress
     onProgress(i + 1, totalRows, 'Cleaning data');
   }
@@ -220,18 +225,38 @@ export const processSingleEmailCSV = async (
         const alternativeRow = rows[(i + 1) % rows.length];  // Next person, wrapping around
         
         // Get names from either fullName or firstName + lastName fields
-        const altFullName = 
-          alternativeRow['fullName'] || 
-          alternativeRow['full_name'] || 
-          (alternativeRow['firstName'] && alternativeRow['lastName'] ? 
-            `${alternativeRow['firstName']} ${alternativeRow['lastName']}` : 
-            (alternativeRow['first_name'] && alternativeRow['last_name'] ? 
-              `${alternativeRow['first_name']} ${alternativeRow['last_name']}` : ''));
+        // Check for variations in case (e.g., fullName, fullname, FullName)
+        const getNameValue = (row: CSVRow, possibleKeys: string[]): string => {
+          for (const key of possibleKeys) {
+            for (const rowKey of Object.keys(row)) {
+              if (rowKey.toLowerCase() === key.toLowerCase() && row[rowKey]) {
+                return row[rowKey];
+              }
+            }
+          }
+          return '';
+        };
         
-        // Assign alternative contact info
+        const firstName = getNameValue(alternativeRow, ['firstName', 'first_name', 'firstname']);
+        const lastName = getNameValue(alternativeRow, ['lastName', 'last_name', 'lastname']);
+        const fullName = getNameValue(alternativeRow, ['fullName', 'full_name', 'fullname', 'name']);
+        
+        const altFullName = fullName || (firstName && lastName ? `${firstName} ${lastName}` : '');
+        
+        // Get title (try different case variations)
+        const getTitle = (row: CSVRow): string => {
+          for (const key of Object.keys(row)) {
+            if (key.toLowerCase() === 'title' && row[key]) {
+              return row[key];
+            }
+          }
+          return '';
+        };
+        
+        // Assign alternative contact info, ensuring data is properly set
         currentRow['other_dm_name'] = altFullName || '';
         currentRow['other_dm_email'] = alternativeRow[emailColumn] || '';
-        currentRow['other_dm_title'] = alternativeRow['title'] || alternativeRow['Title'] || '';
+        currentRow['other_dm_title'] = getTitle(alternativeRow) || '';
       }
     } else {
       // No alternative contacts for sole domain representatives
@@ -242,6 +267,13 @@ export const processSingleEmailCSV = async (
     
     processedCount += rows.length;
     onProgress(processedCount, totalRows, 'Assigning alternative contacts');
+  });
+  
+  // Final verification to ensure all rows have the required fields
+  result.forEach(row => {
+    row['other_dm_name'] = row['other_dm_name'] || '';
+    row['other_dm_email'] = row['other_dm_email'] || '';
+    row['other_dm_title'] = row['other_dm_title'] || '';
   });
   
   return result;
@@ -285,19 +317,35 @@ const cleanDomain = (url: string): string => {
 
 const getMxProviderFromEmail = (email: string): string => {
   try {
+    if (!email || !email.includes('@')) return 'Unknown';
+    
     const domain = email.split('@')[1].toLowerCase();
     
-    // Check for common email providers
+    // Check for common email providers - improved detection logic
     if (domain.includes('gmail')) return 'Gmail';
-    if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) return 'Microsoft';
+    if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || domain.includes('microsoft')) return 'Microsoft';
     if (domain.includes('yahoo')) return 'Yahoo';
     if (domain.includes('aol')) return 'AOL';
-    if (domain.includes('icloud') || domain.includes('me.com')) return 'Apple';
+    if (domain.includes('icloud') || domain.includes('me.com') || domain.includes('apple')) return 'Apple';
     if (domain.includes('proton')) return 'ProtonMail';
+    if (domain.includes('mail.ru')) return 'Mail.ru';
+    if (domain.includes('yandex')) return 'Yandex';
+    if (domain.includes('zoho')) return 'Zoho';
+    if (domain.includes('gmx')) return 'GMX';
+    if (domain.includes('comcast') || domain.includes('xfinity')) return 'Comcast';
+    if (domain.includes('verizon')) return 'Verizon';
+    if (domain.includes('att') || domain.includes('att.net')) return 'AT&T';
+    if (domain.includes('fastmail')) return 'FastMail';
     
-    // If no common provider is detected, return the domain
-    return 'Custom';
+    // Check for company domains matching cleaned website
+    if (domain && email.includes('@' + domain)) {
+      return 'Company Email';
+    }
+    
+    // Return domain for custom providers
+    return domain;
   } catch (error) {
+    console.error('Error detecting MX provider:', error);
     return 'Unknown';
   }
 };
