@@ -384,6 +384,9 @@ export const processDomainOnlyCSV = async (
       row['other_dm_email'] = '';
       row['other_dm_title'] = '';
       
+      // Mark as not to be deleted
+      row['to_be_deleted'] = 'false';
+      
       // Remove whitespace
       Object.keys(row).forEach(key => {
         if (typeof row[key] === 'string') {
@@ -414,46 +417,96 @@ export const processSingleEmailCSV = async (
   console.log(`Processing single-email CSV with ${data.length} rows`);
   const originalRowCount = data.length;
   
-  // Stage 1: Filter out rows with empty emails and remove duplicates
+  // Stage 1: Mark rows with empty emails and duplicates for deletion
   updateProgress(0, originalRowCount, 'Filtering email data');
   
-  // First filter out rows with empty or invalid emails
-  let filteredData = data.filter(row => {
-    const email = (row[emailField] || '').trim().toLowerCase();
-    return email !== '' && email.includes('@'); // Basic validation
+  // First mark rows with empty or invalid emails
+  let processedData = data.map(row => {
+    const newRow = { ...row };
+    const email = (newRow[emailField] || '').trim().toLowerCase();
+    
+    // Mark rows with empty emails as to be deleted
+    if (email === '' || !email.includes('@')) {
+      newRow['to_be_deleted'] = 'true';
+      newRow['deletion_reason'] = 'Empty or invalid email';
+    } else {
+      newRow['to_be_deleted'] = 'false';
+    }
+    
+    return newRow;
   });
   
-  console.log(`After removing empty emails: ${filteredData.length} rows (removed ${data.length - filteredData.length} rows)`);
+  console.log(`After marking empty emails: ${processedData.filter(r => r['to_be_deleted'] === 'false').length} valid rows (marked ${processedData.filter(r => r['to_be_deleted'] === 'true').length} rows for deletion)`);
   
-  // Then deduplicate emails - keep the row with more data
-  const uniqueEmails = new Map<string, CSVRow>();
+  // Then mark duplicate emails - keep the row with more data
+  const uniqueEmails = new Map<string, number>();
+  const duplicateEmails = new Set<string>();
   
-  filteredData.forEach((row, index) => {
-    const email = row[emailField].toLowerCase().trim();
+  // First pass: identify duplicates
+  processedData.forEach((row, index) => {
+    if (row['to_be_deleted'] === 'true') return;
     
-    // Keep the row with more data when duplicates are found
-    if (!uniqueEmails.has(email) || 
-        // Count non-empty values to determine which row has more data
-        Object.values(row).filter(v => v && v.trim() !== '').length > 
-        Object.values(uniqueEmails.get(email) || {}).filter(v => v && v.trim() !== '').length) {
-      uniqueEmails.set(email, row);
+    const email = row[emailField].toLowerCase().trim();
+    if (uniqueEmails.has(email)) {
+      duplicateEmails.add(email);
+    } else {
+      uniqueEmails.set(email, index);
     }
     
     if (index % 100 === 0) {
-      updateProgress(index + 1, originalRowCount, 'Removing duplicate emails');
+      updateProgress(index + 1, originalRowCount, 'Identifying duplicate emails');
     }
   });
   
-  let uniqueEmailData: CSVData = Array.from(uniqueEmails.values());
-  console.log(`After deduplication: ${uniqueEmailData.length} unique emails (removed ${filteredData.length - uniqueEmailData.length} duplicates)`);
-  updateProgress(uniqueEmailData.length, originalRowCount, 'Removed duplicate emails');
+  // Second pass: for duplicates, find the row with the most data
+  if (duplicateEmails.size > 0) {
+    console.log(`Found ${duplicateEmails.size} duplicate emails to process`);
+    
+    // For each duplicate email, find the row with the most data
+    duplicateEmails.forEach(email => {
+      const duplicateRows = processedData
+        .map((row, index) => ({ row, index }))
+        .filter(item => 
+          item.row['to_be_deleted'] === 'false' && 
+          item.row[emailField].toLowerCase().trim() === email
+        );
+      
+      if (duplicateRows.length <= 1) return;
+      
+      // Find the row with the most non-empty values
+      let bestRowIndex = duplicateRows[0].index;
+      let maxNonEmptyValues = Object.values(duplicateRows[0].row)
+        .filter(v => v && v.trim() !== '').length;
+      
+      for (let i = 1; i < duplicateRows.length; i++) {
+        const nonEmptyValues = Object.values(duplicateRows[i].row)
+          .filter(v => v && v.trim() !== '').length;
+        
+        if (nonEmptyValues > maxNonEmptyValues) {
+          maxNonEmptyValues = nonEmptyValues;
+          bestRowIndex = duplicateRows[i].index;
+        }
+      }
+      
+      // Mark all duplicate rows except the best one for deletion
+      duplicateRows.forEach(item => {
+        if (item.index !== bestRowIndex) {
+          processedData[item.index]['to_be_deleted'] = 'true';
+          processedData[item.index]['deletion_reason'] = 'Duplicate email (keeping row with more data)';
+        }
+      });
+    });
+  }
+  
+  console.log(`After marking duplicates: ${processedData.filter(r => r['to_be_deleted'] === 'false').length} unique rows (marked ${processedData.filter(r => r['to_be_deleted'] === 'true' && r['deletion_reason']?.includes('Duplicate')).length} duplicate rows for deletion)`);
+  updateProgress(processedData.length, originalRowCount, 'Marked duplicate emails');
   
   // Stage 2: Process MX records
-  updateProgress(0, uniqueEmailData.length, 'Processing MX records');
-  let processedData = await processMXBatch(
-    uniqueEmailData,
+  updateProgress(0, processedData.length, 'Processing MX records');
+  processedData = await processMXBatch(
+    processedData,
     emailField,
-    (processed) => updateProgress(processed, uniqueEmailData.length, 'Processing MX records')
+    (processed) => updateProgress(processed, processedData.length, 'Processing MX records')
   );
   
   // Stage 3: Clean company names and websites
@@ -492,33 +545,42 @@ export const processSingleEmailCSV = async (
     updateProgress(chunkEnd, processedData.length, 'Cleaning data');
   }
   
-  // Stage 4: Count domain occurrences and filter domains with more than 6 occurrences
+  // Stage 4: Count domain occurrences and mark domains with more than 6 occurrences for deletion
   updateProgress(0, processedData.length, 'Analyzing domain frequencies');
   const domainCounts: Record<string, number> = {};
   
-  // First count all domains
+  // First count all domains (only for rows not already marked for deletion)
   processedData.forEach(row => {
+    if (row['to_be_deleted'] === 'true') return;
+    
     const domain = row['cleaned_website'];
     if (domain && domain.trim() !== '') {
       domainCounts[domain] = (domainCounts[domain] || 0) + 1;
     }
   });
   
-  // Then filter out domains with more than 6 occurrences
-  const filteredByDomain = processedData.filter(row => {
+  // Then mark domains with more than 6 occurrences for deletion
+  processedData.forEach(row => {
+    if (row['to_be_deleted'] === 'true') return;
+    
     const domain = row['cleaned_website'];
-    return !domain || domain.trim() === '' || domainCounts[domain] <= 6; // Strict 6 threshold as requested
+    if (domain && domain.trim() !== '' && domainCounts[domain] > 6) {
+      row['to_be_deleted'] = 'true';
+      row['deletion_reason'] = `Domain ${domain} appears ${domainCounts[domain]} times (>6)`;
+    }
   });
   
-  console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
+  console.log(`After marking high-frequency domains: ${processedData.filter(r => r['to_be_deleted'] === 'false').length} rows remain (marked ${processedData.filter(r => r['to_be_deleted'] === 'true' && r['deletion_reason']?.includes('Domain')).length} rows for deletion due to domain frequency)`);
   
   // Stage 5: Round-robin assignment for other_dm_name with improved blank domain handling
-  updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
+  updateProgress(0, processedData.length, 'Adding alternative contacts');
   
-  // Group rows by domain, skipping blank websites
+  // Group rows by domain, skipping blank websites and rows marked for deletion
   const domainMap: Record<string, CSVRow[]> = {};
   
-  filteredByDomain.forEach(row => {
+  processedData.forEach(row => {
+    if (row['to_be_deleted'] === 'true') return;
+    
     const domain = row['cleaned_website'];
     if (domain && domain.trim() !== '') {
       if (!domainMap[domain]) {
@@ -606,10 +668,10 @@ export const processSingleEmailCSV = async (
   
   console.log(`Successfully enriched ${enrichedCount} rows with other_dm_name`);
   
-  updateProgress(filteredByDomain.length, filteredByDomain.length, 'Complete');
-  console.log(`Single-email processing complete: ${filteredByDomain.length} rows in final output (from ${originalRowCount} original rows)`);
+  updateProgress(processedData.length, processedData.length, 'Complete');
+  console.log(`Single-email processing complete: ${processedData.filter(r => r['to_be_deleted'] === 'false').length} valid rows from ${originalRowCount} original rows`);
   
-  return filteredByDomain;
+  return processedData;
 };
 
 /**
@@ -702,6 +764,9 @@ export const processMultiEmailCSV = async (
         newRow['title'] = emailData.title || '';
         newRow['phone'] = emailData.phone || '';
         
+        // Set to_be_deleted flag (default to false)
+        newRow['to_be_deleted'] = 'false';
+        
         // For debugging
         newRow['_source_column'] = emailData.emailColumn;
         
@@ -735,6 +800,58 @@ export const processMultiEmailCSV = async (
     console.log("No valid emails found in the multi-email CSV");
     return [];
   }
+  
+  // Identify duplicate emails and mark them for deletion
+  const uniqueEmails = new Map<string, number>();
+  const duplicateEmails = new Set<string>();
+  
+  // First pass: identify duplicates
+  expandedData.forEach((row, index) => {
+    const email = row['email'].toLowerCase().trim();
+    if (uniqueEmails.has(email)) {
+      duplicateEmails.add(email);
+    } else {
+      uniqueEmails.set(email, index);
+    }
+  });
+  
+  // Second pass: mark duplicates for deletion, keeping the row with most data
+  if (duplicateEmails.size > 0) {
+    console.log(`Found ${duplicateEmails.size} duplicate emails to process`);
+    
+    duplicateEmails.forEach(email => {
+      const duplicateRows = expandedData
+        .map((row, index) => ({ row, index }))
+        .filter(item => item.row['email'].toLowerCase().trim() === email);
+      
+      if (duplicateRows.length <= 1) return;
+      
+      // Find the row with the most non-empty values
+      let bestRowIndex = duplicateRows[0].index;
+      let maxNonEmptyValues = Object.values(duplicateRows[0].row)
+        .filter(v => v && v.trim() !== '').length;
+      
+      for (let i = 1; i < duplicateRows.length; i++) {
+        const nonEmptyValues = Object.values(duplicateRows[i].row)
+          .filter(v => v && v.trim() !== '').length;
+        
+        if (nonEmptyValues > maxNonEmptyValues) {
+          maxNonEmptyValues = nonEmptyValues;
+          bestRowIndex = duplicateRows[i].index;
+        }
+      }
+      
+      // Mark all duplicate rows except the best one for deletion
+      duplicateRows.forEach(item => {
+        if (item.index !== bestRowIndex) {
+          expandedData[item.index]['to_be_deleted'] = 'true';
+          expandedData[item.index]['deletion_reason'] = 'Duplicate email (keeping row with more data)';
+        }
+      });
+    });
+  }
+  
+  console.log(`After marking duplicates: ${expandedData.filter(r => r['to_be_deleted'] === 'false').length} unique rows (marked ${expandedData.filter(r => r['to_be_deleted'] === 'true').length} duplicate rows for deletion)`);
   
   // Now perform MX lookup and cleaning on expanded data
   updateProgress(0, expandedData.length, 'Processing MX records');
@@ -779,32 +896,42 @@ export const processMultiEmailCSV = async (
     updateProgress(chunkEnd, processedData.length, 'Cleaning data');
   }
   
-  // Count domain occurrences and filter out domains with more than 6 occurrences
+  // Count domain occurrences and mark domains with more than 6 occurrences for deletion
   updateProgress(0, processedData.length, 'Analyzing domain frequencies');
   const domainCounts: Record<string, number> = {};
   
+  // First count all domains (only for rows not already marked for deletion)
   processedData.forEach(row => {
+    if (row['to_be_deleted'] === 'true') return;
+    
     const domain = row['cleaned_website'];
     if (domain && domain.trim() !== '') {
       domainCounts[domain] = (domainCounts[domain] || 0) + 1;
     }
   });
   
-  // Apply strict 6 threshold as requested by user
-  const filteredByDomain = processedData.filter(row => {
+  // Then mark domains with more than 6 occurrences for deletion
+  processedData.forEach(row => {
+    if (row['to_be_deleted'] === 'true') return;
+    
     const domain = row['cleaned_website'];
-    return !domain || domain.trim() === '' || domainCounts[domain] <= 6;
+    if (domain && domain.trim() !== '' && domainCounts[domain] > 6) {
+      row['to_be_deleted'] = 'true';
+      row['deletion_reason'] = `Domain ${domain} appears ${domainCounts[domain]} times (>6)`;
+    }
   });
   
-  console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
+  console.log(`After marking high-frequency domains: ${processedData.filter(r => r['to_be_deleted'] === 'false').length} rows remain (marked ${processedData.filter(r => r['to_be_deleted'] === 'true' && r['deletion_reason']?.includes('Domain')).length} rows for deletion due to domain frequency)`);
   
   // Round-robin assignment for other_dm_name - skip blank domains
-  updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
+  updateProgress(0, processedData.length, 'Adding alternative contacts');
   
-  // Group rows by domain for round-robin assignment, skipping blank domains
+  // Group rows by domain for round-robin assignment, skipping blank domains and rows marked for deletion
   const domainMap: Record<string, CSVRow[]> = {};
   
-  filteredByDomain.forEach(row => {
+  processedData.forEach(row => {
+    if (row['to_be_deleted'] === 'true') return;
+    
     const domain = row['cleaned_website'];
     if (domain && domain.trim() !== '') {
       if (!domainMap[domain]) {
@@ -901,20 +1028,20 @@ export const processMultiEmailCSV = async (
   console.log(`Successfully enriched ${enrichedCount} rows with other_dm_name`);
   
   // Final verification - ensure all rows have other_dm fields
-  filteredByDomain.forEach(row => {
+  processedData.forEach(row => {
     if (row['other_dm_name'] === undefined) row['other_dm_name'] = '';
     if (row['other_dm_email'] === undefined) row['other_dm_email'] = '';
     if (row['other_dm_title'] === undefined) row['other_dm_title'] = '';
   });
   
-  updateProgress(filteredByDomain.length, filteredByDomain.length, 'Complete');
-  console.log(`Multi-email processing complete: ${filteredByDomain.length} rows in final output (from ${originalRowCount} original rows)`);
+  updateProgress(processedData.length, processedData.length, 'Complete');
+  console.log(`Multi-email processing complete: ${processedData.filter(r => r['to_be_deleted'] === 'false').length} valid rows from ${originalRowCount} original rows`);
   
-  return filteredByDomain;
+  return processedData;
 };
 
 /**
- * Save CSV data as a downloadable file
+ * Save CSV data as a downloadable file - modified to handle to_be_deleted column
  */
 export const downloadCSV = (data: CSVData, filename: string): void => {
   if (!data.length) {
@@ -931,7 +1058,7 @@ export const downloadCSV = (data: CSVData, filename: string): void => {
   });
   
   // Add critical fields if they don't exist
-  ['other_dm_name', 'other_dm_email', 'other_dm_title'].forEach(field => {
+  ['other_dm_name', 'other_dm_email', 'other_dm_title', 'to_be_deleted', 'deletion_reason'].forEach(field => {
     allHeaders.add(field);
   });
   
