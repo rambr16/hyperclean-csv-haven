@@ -117,6 +117,24 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     setHighlightedDomain(highlightedDomain === domain ? null : domain);
   }, [highlightedDomain]);
   
+  // Helper function to get the appropriate style for MX provider
+  const getMxProviderStyle = (provider: string) => {
+    if (!provider || provider === 'Unknown' || provider === '-') {
+      return 'text-gray-500';
+    }
+    
+    const knownProviders = ['Gmail', 'Microsoft', 'Yahoo', 'Apple', 'ProtonMail', 'Zoho', 'AOL', 'FastMail'];
+    if (knownProviders.includes(provider)) {
+      return 'text-purple-600 font-medium';
+    }
+    
+    if (provider === 'Company Email') {
+      return 'text-blue-600 font-medium';
+    }
+    
+    return 'text-green-600';
+  };
+  
   return (
     <Card className="w-full mt-8 shadow-sm animate-fade-in animate-delay-200">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -216,10 +234,7 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
                         return (
                           <td 
                             key={`${rowIndex}-${header}`} 
-                            className={`px-3 py-2 text-xs ${
-                              row[header] && row[header] !== 'Unknown' && row[header] !== 'Custom' ? 
-                              'text-blue-600 font-medium' : 'text-gray-500'
-                            }`}
+                            className={`px-3 py-2 text-xs ${getMxProviderStyle(row[header])}`}
                           >
                             {row[header] || '-'}
                           </td>

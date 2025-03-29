@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -63,6 +64,15 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
       row.other_dm_name !== undefined
     ).length : 0;
     
+    // Count MX providers
+    const mxProviders: Record<string, number> = {};
+    if (columns.includes('mx_provider')) {
+      task.result.forEach(row => {
+        const provider = row.mx_provider || 'Unknown';
+        mxProviders[provider] = (mxProviders[provider] || 0) + 1;
+      });
+    }
+    
     const exampleRow = hasOtherDmNameColumn ? task.result.find(row => 
       row.other_dm_name && 
       row.other_dm_name.trim() !== '' && 
@@ -123,6 +133,30 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
             </li>
           )}
         </ul>
+        
+        {/* MX Provider Stats */}
+        {Object.keys(mxProviders).length > 0 && (
+          <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-100">
+            <p className="font-medium text-blue-700">Email Provider Distribution:</p>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              {Object.entries(mxProviders)
+                .sort((a, b) => b[1] - a[1]) // Sort by count descending
+                .slice(0, 6) // Show top 6 providers
+                .map(([provider, count]) => (
+                  <div key={provider} className="flex justify-between">
+                    <span className={provider === 'Company Email' ? 'text-blue-600' : 
+                                    provider === 'Gmail' ? 'text-red-600' : 
+                                    provider === 'Microsoft' ? 'text-blue-500' : 
+                                    'text-gray-700'}>
+                      {provider}:
+                    </span>
+                    <span className="font-medium">{count}</span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        )}
         
         {otherDMCount > 0 && exampleRow && (
           <div className="mt-2 p-2 bg-green-50 rounded border border-green-100">

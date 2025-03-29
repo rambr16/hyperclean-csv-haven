@@ -153,6 +153,8 @@ export const processSingleEmailCSV = async (
   companyColumn: string,
   onProgress: (processed: number, total: number, stage: string) => void
 ): Promise<CSVData> => {
+  console.log(`Processing single email CSV with columns: email=${emailColumn}, website=${websiteColumn}, company=${companyColumn}`);
+  
   // Create a deep copy of the data to avoid modifying the original
   let result: CSVData = JSON.parse(JSON.stringify(data));
   const totalRows = data.length;
@@ -186,6 +188,7 @@ export const processSingleEmailCSV = async (
     // Add MX provider information if available from email
     if (row[emailColumn]) {
       row['mx_provider'] = getMxProviderFromEmail(row[emailColumn]);
+      console.log(`Email: ${row[emailColumn]}, MX Provider: ${row['mx_provider']}`);
     }
     
     // Initialize other_dm fields to ensure they exist in all rows
@@ -213,10 +216,14 @@ export const processSingleEmailCSV = async (
     }
   });
   
+  console.log(`Found ${Object.keys(domainGroups).length} unique domains`);
+  
   // Process each domain group to assign alternative contacts
   let processedCount = 0;
   
   Object.entries(domainGroups).forEach(([domain, rows]) => {
+    console.log(`Processing domain ${domain} with ${rows.length} contacts`);
+    
     if (rows.length > 1) {
       // If there are multiple contacts for the same domain,
       // assign them as alternative contacts to each other in a round-robin fashion
@@ -257,6 +264,8 @@ export const processSingleEmailCSV = async (
         currentRow['other_dm_name'] = altFullName || '';
         currentRow['other_dm_email'] = alternativeRow[emailColumn] || '';
         currentRow['other_dm_title'] = getTitle(alternativeRow) || '';
+        
+        console.log(`Set alt contact for email ${currentRow[emailColumn]}: ${currentRow['other_dm_name']}, ${currentRow['other_dm_email']}`);
       }
     } else {
       // No alternative contacts for sole domain representatives
@@ -275,6 +284,10 @@ export const processSingleEmailCSV = async (
     row['other_dm_email'] = row['other_dm_email'] || '';
     row['other_dm_title'] = row['other_dm_title'] || '';
   });
+  
+  // Count how many rows have alternative contacts
+  const altContactsCount = result.filter(row => row.other_dm_name && row.other_dm_name.trim() !== '').length;
+  console.log(`Found ${altContactsCount} rows with alternative contacts`);
   
   return result;
 };
@@ -320,13 +333,14 @@ const getMxProviderFromEmail = (email: string): string => {
     if (!email || !email.includes('@')) return 'Unknown';
     
     const domain = email.split('@')[1].toLowerCase();
+    console.log(`Checking MX provider for domain: ${domain}`);
     
     // Check for common email providers - improved detection logic
     if (domain.includes('gmail')) return 'Gmail';
-    if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || domain.includes('microsoft')) return 'Microsoft';
+    if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || domain.includes('msn') || domain.includes('microsoft')) return 'Microsoft';
     if (domain.includes('yahoo')) return 'Yahoo';
     if (domain.includes('aol')) return 'AOL';
-    if (domain.includes('icloud') || domain.includes('me.com') || domain.includes('apple')) return 'Apple';
+    if (domain.includes('icloud') || domain.includes('me.com') || domain.includes('mac.com') || domain.includes('apple')) return 'Apple';
     if (domain.includes('proton')) return 'ProtonMail';
     if (domain.includes('mail.ru')) return 'Mail.ru';
     if (domain.includes('yandex')) return 'Yandex';
@@ -336,14 +350,21 @@ const getMxProviderFromEmail = (email: string): string => {
     if (domain.includes('verizon')) return 'Verizon';
     if (domain.includes('att') || domain.includes('att.net')) return 'AT&T';
     if (domain.includes('fastmail')) return 'FastMail';
+    if (domain.includes('mail.com')) return 'Mail.com';
+    if (domain.includes('web.de')) return 'Web.de';
+    if (domain.includes('t-online')) return 'T-Online';
+    if (domain.includes('mailchimp')) return 'Mailchimp';
+    if (domain.includes('googlemail')) return 'Gmail'; // Another Gmail domain
     
-    // Check for company domains matching cleaned website
-    if (domain && email.includes('@' + domain)) {
-      return 'Company Email';
+    // Check for business email (matching the domain of the website)
+    const extractedDomain = domain.toLowerCase();
+    
+    // If domain doesn't contain common TLDs like .com, .org, treat as Company Email
+    if (!(/\.(com|net|org|io|co|edu|gov|mil)$/.test(extractedDomain))) {
+      return 'Unknown';
     }
     
-    // Return domain for custom providers
-    return domain;
+    return 'Company Email';
   } catch (error) {
     console.error('Error detecting MX provider:', error);
     return 'Unknown';
