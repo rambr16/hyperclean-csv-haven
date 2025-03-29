@@ -144,9 +144,10 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
                 .slice(0, 6) // Show top 6 providers
                 .map(([provider, count]) => (
                   <div key={provider} className="flex justify-between">
-                    <span className={provider === 'Company Email' ? 'text-blue-600' : 
-                                    provider === 'Gmail' ? 'text-red-600' : 
-                                    provider === 'Microsoft' ? 'text-blue-500' : 
+                    <span className={provider === 'Company Email' ? 'text-green-600 font-medium' : 
+                                    provider === 'Gmail' ? 'text-red-600 font-medium' : 
+                                    provider === 'Microsoft' ? 'text-blue-600 font-medium' : 
+                                    provider === 'Yahoo' ? 'text-purple-600 font-medium' :
                                     'text-gray-700'}>
                       {provider}:
                     </span>

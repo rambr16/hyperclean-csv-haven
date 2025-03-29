@@ -123,16 +123,23 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
       return 'text-gray-500';
     }
     
-    const knownProviders = ['Gmail', 'Microsoft', 'Yahoo', 'Apple', 'ProtonMail', 'Zoho', 'AOL', 'FastMail'];
-    if (knownProviders.includes(provider)) {
+    if (provider === 'Gmail') {
+      return 'text-red-600 font-medium';
+    }
+    
+    if (provider === 'Microsoft') {
+      return 'text-blue-600 font-medium';
+    }
+    
+    if (provider === 'Yahoo') {
       return 'text-purple-600 font-medium';
     }
     
     if (provider === 'Company Email') {
-      return 'text-blue-600 font-medium';
+      return 'text-green-600 font-medium';
     }
     
-    return 'text-green-600';
+    return 'text-blue-500';
   };
   
   return (

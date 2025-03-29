@@ -188,7 +188,6 @@ export const processSingleEmailCSV = async (
     // Add MX provider information if available from email
     if (row[emailColumn]) {
       row['mx_provider'] = getMxProviderFromEmail(row[emailColumn]);
-      console.log(`Email: ${row[emailColumn]}, MX Provider: ${row['mx_provider']}`);
     }
     
     // Initialize other_dm fields to ensure they exist in all rows
@@ -248,7 +247,7 @@ export const processSingleEmailCSV = async (
         const lastName = getNameValue(alternativeRow, ['lastName', 'last_name', 'lastname']);
         const fullName = getNameValue(alternativeRow, ['fullName', 'full_name', 'fullname', 'name']);
         
-        const altFullName = fullName || (firstName && lastName ? `${firstName} ${lastName}` : '');
+        let altFullName = fullName || (firstName && lastName ? `${firstName} ${lastName}` : '');
         
         // Get title (try different case variations)
         const getTitle = (row: CSVRow): string => {
@@ -267,11 +266,6 @@ export const processSingleEmailCSV = async (
         
         console.log(`Set alt contact for email ${currentRow[emailColumn]}: ${currentRow['other_dm_name']}, ${currentRow['other_dm_email']}`);
       }
-    } else {
-      // No alternative contacts for sole domain representatives
-      rows[0]['other_dm_name'] = '';
-      rows[0]['other_dm_email'] = '';
-      rows[0]['other_dm_title'] = '';
     }
     
     processedCount += rows.length;
@@ -329,46 +323,27 @@ const cleanDomain = (url: string): string => {
 };
 
 const getMxProviderFromEmail = (email: string): string => {
-  try {
-    if (!email || !email.includes('@')) return 'Unknown';
-    
-    const domain = email.split('@')[1].toLowerCase();
-    console.log(`Checking MX provider for domain: ${domain}`);
-    
-    // Check for common email providers - improved detection logic
-    if (domain.includes('gmail')) return 'Gmail';
-    if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || domain.includes('msn') || domain.includes('microsoft')) return 'Microsoft';
-    if (domain.includes('yahoo')) return 'Yahoo';
-    if (domain.includes('aol')) return 'AOL';
-    if (domain.includes('icloud') || domain.includes('me.com') || domain.includes('mac.com') || domain.includes('apple')) return 'Apple';
-    if (domain.includes('proton')) return 'ProtonMail';
-    if (domain.includes('mail.ru')) return 'Mail.ru';
-    if (domain.includes('yandex')) return 'Yandex';
-    if (domain.includes('zoho')) return 'Zoho';
-    if (domain.includes('gmx')) return 'GMX';
-    if (domain.includes('comcast') || domain.includes('xfinity')) return 'Comcast';
-    if (domain.includes('verizon')) return 'Verizon';
-    if (domain.includes('att') || domain.includes('att.net')) return 'AT&T';
-    if (domain.includes('fastmail')) return 'FastMail';
-    if (domain.includes('mail.com')) return 'Mail.com';
-    if (domain.includes('web.de')) return 'Web.de';
-    if (domain.includes('t-online')) return 'T-Online';
-    if (domain.includes('mailchimp')) return 'Mailchimp';
-    if (domain.includes('googlemail')) return 'Gmail'; // Another Gmail domain
-    
-    // Check for business email (matching the domain of the website)
-    const extractedDomain = domain.toLowerCase();
-    
-    // If domain doesn't contain common TLDs like .com, .org, treat as Company Email
-    if (!(/\.(com|net|org|io|co|edu|gov|mil)$/.test(extractedDomain))) {
-      return 'Unknown';
-    }
-    
+  if (!email || !email.includes('@')) return 'Unknown';
+  
+  const domain = email.split('@')[1].toLowerCase();
+  
+  // Simplified but more accurate MX provider detection
+  if (domain.includes('gmail')) return 'Gmail';
+  if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live') || 
+      domain.includes('msn') || domain.includes('microsoft')) return 'Microsoft';
+  if (domain.includes('yahoo')) return 'Yahoo';
+  if (domain.includes('aol')) return 'AOL';
+  if (domain.includes('icloud') || domain.includes('me.com') || domain.includes('mac.com')) return 'Apple';
+  if (domain.includes('proton')) return 'ProtonMail';
+  if (domain.includes('zoho')) return 'Zoho';
+  if (domain.includes('fastmail')) return 'FastMail';
+  
+  // Check for company email
+  if (domain.match(/\.(com|net|org|io|co|edu|gov|mil)$/)) {
     return 'Company Email';
-  } catch (error) {
-    console.error('Error detecting MX provider:', error);
-    return 'Unknown';
   }
+  
+  return 'Other';
 };
 
 const logDomainFrequencyStats = (domainCounts: Record<string, number>, threshold: number) => {
@@ -388,7 +363,7 @@ const logDomainFrequencyStats = (domainCounts: Record<string, number>, threshold
   
   // Summary statistics
   if (exceededDomains.length > 0) {
-    const totalExcessRows = exceededDomains.reduce<number>((sum, [_, count]) => sum + count, 0);
+    const totalExcessRows = exceededDomains.reduce((sum, [_, count]) => sum + count, 0);
     console.log(`Total rows with domains exceeding threshold: ${totalExcessRows}`);
   }
   
