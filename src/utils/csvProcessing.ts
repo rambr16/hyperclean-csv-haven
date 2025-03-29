@@ -362,7 +362,7 @@ const logDomainFrequencyStats = (domainCounts: Record<string, number>, threshold
   
   // Summary statistics
   if (exceededDomains.length > 0) {
-    const totalExcessRows = exceededDomains.reduce((sum, [_, count]) => sum + count, 0);
+    const totalExcessRows = exceededDomains.reduce((sum, [count]) => sum + count, 0);
     console.log(`Total rows with domains exceeding threshold: ${totalExcessRows}`);
   }
   
@@ -565,20 +565,13 @@ export const processSingleEmailCSV = async (
   
   console.log(`Domain filtering would remove ${totalRowsAffectedByDomainFiltering} rows (${((totalRowsAffectedByDomainFiltering/processedData.length)*100).toFixed(2)}% of data)`);
   
-  // IMPORTANT CHANGE: Disable the domain frequency filter if it would remove more than 50% of data
-  let filteredByDomain;
-  const domainFilteringPercentage = (totalRowsAffectedByDomainFiltering / processedData.length) * 100;
-  
-  if (domainFilteringPercentage > 50) {
-    console.log(`!!!! DOMAIN FILTERING DISABLED - would remove ${domainFilteringPercentage.toFixed(2)}% of data !!!!`);
-    filteredByDomain = processedData; // Skip filtering
-  } else {
-    // Then filter out domains with more than DOMAIN_FREQUENCY_THRESHOLD occurrences
-    filteredByDomain = processedData.filter(row => {
-      const domain = row['cleaned_website'];
-      return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
-    });
-  }
+  // FIX: Properly filter by domain threshold - explicitly keep rows with empty domains
+  // IMPORTANT: Remove the conditional disabling of domain filtering
+  let filteredByDomain = processedData.filter(row => {
+    const domain = row['cleaned_website'];
+    // Keep rows with empty/blank domains OR domains that don't exceed the threshold
+    return !domain || domain.trim() === '' || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
+  });
   
   // Log data loss after domain filtering
   logDataLossStats("Domain frequency filtering", processedData.length, filteredByDomain.length);
@@ -597,10 +590,10 @@ export const processSingleEmailCSV = async (
   
   console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
   
-  // Stage 5: Improved round-robin assignment for other_dm_name with debugging
+  // Round-robin assignment for other_dm_name
   updateProgress(0, filteredByDomain.length, 'Adding alternative contacts');
   
-  // Group rows by domain
+  // Group rows by domain for round-robin assignment
   const domainMap: Record<string, CSVRow[]> = {};
   
   filteredByDomain.forEach(row => {
@@ -904,20 +897,13 @@ export const processMultiEmailCSV = async (
   
   console.log(`Domain filtering would remove ${totalRowsAffectedByDomainFiltering} rows (${((totalRowsAffectedByDomainFiltering/processedData.length)*100).toFixed(2)}% of data)`);
   
-  // IMPORTANT CHANGE: Disable the domain frequency filter if it would remove more than 50% of data
-  let filteredByDomain;
-  const domainFilteringPercentage = (totalRowsAffectedByDomainFiltering / processedData.length) * 100;
-  
-  if (domainFilteringPercentage > 50) {
-    console.log(`!!!! DOMAIN FILTERING DISABLED - would remove ${domainFilteringPercentage.toFixed(2)}% of data !!!!`);
-    filteredByDomain = processedData; // Skip filtering
-  } else {
-    // Filter by domain threshold
-    filteredByDomain = processedData.filter(row => {
-      const domain = row['cleaned_website'];
-      return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
-    });
-  }
+  // FIX: Properly filter by domain threshold - explicitly keep rows with empty domains
+  // IMPORTANT: Remove the conditional disabling of domain filtering
+  let filteredByDomain = processedData.filter(row => {
+    const domain = row['cleaned_website'];
+    // Keep rows with empty/blank domains OR domains that don't exceed the threshold
+    return !domain || domain.trim() === '' || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
+  });
   
   logDataLossStats("Domain frequency filtering (multi-email)", processedData.length, filteredByDomain.length);
   
