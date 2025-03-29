@@ -9,7 +9,7 @@ import ProcessingTasks from '@/components/ProcessingTasks';
 import DataPreview from '@/components/DataPreview';
 import { 
   CSVData, 
-  CSVRow,
+  CSVRow,  // Import CSVRow type
   ProcessingTask, 
   processDomainOnlyCSV, 
   processSingleEmailCSV, 
@@ -164,16 +164,23 @@ const Dashboard: React.FC = () => {
       
       console.log(`Processing complete: ${result.length} rows in final result (from ${csvData.length} original rows)`);
       
-      // Ensure result has other_dm fields and proper casing of field names
+      // Ensure result has other_dm fields in each row and filter out excluded columns
       result = result.map(row => {
-        const processedRow = { ...row };
+        const filteredRow: CSVRow = {};
+        
+        // Copy only non-excluded columns
+        Object.keys(row).forEach(key => {
+          if (!excludedColumns.includes(key.toLowerCase())) {
+            filteredRow[key] = row[key];
+          }
+        });
         
         // Ensure other_dm fields exist
-        processedRow.other_dm_name = processedRow.other_dm_name || '';
-        processedRow.other_dm_email = processedRow.other_dm_email || '';
-        processedRow.other_dm_title = processedRow.other_dm_title || '';
+        filteredRow.other_dm_name = row.other_dm_name !== undefined ? row.other_dm_name : '';
+        filteredRow.other_dm_email = row.other_dm_email !== undefined ? row.other_dm_email : '';
+        filteredRow.other_dm_title = row.other_dm_title !== undefined ? row.other_dm_title : '';
         
-        return processedRow;
+        return filteredRow;
       });
       
       updateTaskProgress(taskId, { 
@@ -188,10 +195,7 @@ const Dashboard: React.FC = () => {
       
       setPreviewData(result);
       
-      // Count how many rows have alternative contacts
-      const altContactsCount = result.filter(row => row.other_dm_name && row.other_dm_name.trim() !== '').length;
-      
-      toast.success(`CSV processing completed. Processed ${csvData.length} rows, resulted in ${result.length} rows after cleaning. Found ${altContactsCount} alternative contacts.`);
+      toast.success(`CSV processing completed. Processed ${csvData.length} rows, resulted in ${result.length} rows after cleaning.`);
     } catch (error) {
       console.error('Error processing CSV:', error);
       updateTaskProgress(taskId, { status: 'error' });
