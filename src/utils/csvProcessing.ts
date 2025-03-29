@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 import { getDomainFromEmail, isGenericEmail } from './auth';
 
@@ -36,7 +35,6 @@ export const excludedColumns = [
   'website_keywords', 'website_has_fb_pixel', 'website_has_google_tag', 'tiktok',
   'medium', 'reddit', 'skype', 'snapchat', 'telegram', 'whatsapp', 'twitter',
   'vimeo', 'youtube', 'github', 'crunchbase', 'instagram', 'facebook',
-  // Adding new columns to exclude
   'latitude', 'longitude', 'h3', 'time_zone', 'plus_code', 'area_service',
   'seniority', 'function', 'key', 'id', 'company id', 'headline', 
   'company twitter', 'company facebook', 'alexa ranking', 'keywords',
@@ -345,6 +343,33 @@ export const processMXBatch = async (
 };
 
 /**
+ * Utility function to log domain frequency to help with debugging
+ */
+const logDomainFrequencyStats = (domainCounts: Record<string, number>, threshold: number) => {
+  console.log(`----- DOMAIN FREQUENCY DEBUGGING -----`);
+  
+  // Count how many domains exceed the threshold
+  const exceededDomains = Object.entries(domainCounts)
+    .filter(([_, count]) => count > threshold)
+    .sort((a, b) => b[1] - a[1]);  // Sort by count descending
+  
+  console.log(`Found ${exceededDomains.length} domains that exceed threshold of ${threshold}:`);
+  
+  // Log the top 10 most frequent domains
+  exceededDomains.slice(0, 10).forEach(([domain, count]) => {
+    console.log(`Domain: ${domain}, Count: ${count}`);
+  });
+  
+  // Summary statistics
+  if (exceededDomains.length > 0) {
+    const totalExcessRows = exceededDomains.reduce((sum, [count]) => sum + count, 0);
+    console.log(`Total rows with domains exceeding threshold: ${totalExcessRows}`);
+  }
+  
+  console.log(`-----------------------------------`);
+};
+
+/**
  * Process domain only
  */
 export const processDomainOnlyCSV = async (
@@ -494,11 +519,28 @@ export const processSingleEmailCSV = async (
     }
   });
   
-  // Then filter out domains with more than 6 occurrences
+  // DEBUG: Log domain frequency stats before filtering
+  const DOMAIN_FREQUENCY_THRESHOLD = 6;
+  console.log(`Domain frequency debugging - BEFORE filtering (threshold: ${DOMAIN_FREQUENCY_THRESHOLD})`);
+  logDomainFrequencyStats(domainCounts, DOMAIN_FREQUENCY_THRESHOLD);
+  
+  // Then filter out domains with more than DOMAIN_FREQUENCY_THRESHOLD occurrences
   const filteredByDomain = processedData.filter(row => {
     const domain = row['cleaned_website'];
-    return !domain || domainCounts[domain] <= 10; // Increased threshold to 10
+    return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
   });
+  
+  // DEBUG: Verify the filtering worked by counting domains again
+  const postFilterDomainCounts: Record<string, number> = {};
+  filteredByDomain.forEach(row => {
+    const domain = row['cleaned_website'];
+    if (domain) {
+      postFilterDomainCounts[domain] = (postFilterDomainCounts[domain] || 0) + 1;
+    }
+  });
+  
+  console.log(`Domain frequency debugging - AFTER filtering (threshold: ${DOMAIN_FREQUENCY_THRESHOLD})`);
+  logDomainFrequencyStats(postFilterDomainCounts, DOMAIN_FREQUENCY_THRESHOLD);
   
   console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
   
@@ -778,11 +820,28 @@ export const processMultiEmailCSV = async (
     }
   });
   
-  // Filter by domain threshold (6)
+  // DEBUG: Log domain frequency stats before filtering
+  const DOMAIN_FREQUENCY_THRESHOLD = 6;
+  console.log(`Domain frequency debugging - BEFORE filtering (threshold: ${DOMAIN_FREQUENCY_THRESHOLD})`);
+  logDomainFrequencyStats(domainCounts, DOMAIN_FREQUENCY_THRESHOLD);
+  
+  // Filter by domain threshold
   const filteredByDomain = processedData.filter(row => {
     const domain = row['cleaned_website'];
-    return !domain || domainCounts[domain] <= 6;
+    return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
   });
+  
+  // DEBUG: Verify the filtering worked by counting domains again
+  const postFilterDomainCounts: Record<string, number> = {};
+  filteredByDomain.forEach(row => {
+    const domain = row['cleaned_website'];
+    if (domain) {
+      postFilterDomainCounts[domain] = (postFilterDomainCounts[domain] || 0) + 1;
+    }
+  });
+  
+  console.log(`Domain frequency debugging - AFTER filtering (threshold: ${DOMAIN_FREQUENCY_THRESHOLD})`);
+  logDomainFrequencyStats(postFilterDomainCounts, DOMAIN_FREQUENCY_THRESHOLD);
   
   console.log(`After domain frequency filtering: ${filteredByDomain.length} rows (removed ${processedData.length - filteredByDomain.length} rows)`);
   
