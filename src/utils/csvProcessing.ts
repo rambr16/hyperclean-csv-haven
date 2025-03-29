@@ -122,7 +122,7 @@ export const processDomainOnlyCSV = async (
   onProgress: (processed: number) => void
 ): Promise<CSVData> => {
   // Create a copy of the data to avoid modifying the original
-  const result: CSVData = [...data];
+  const result: CSVData = JSON.parse(JSON.stringify(data));
   const totalRows = data.length;
   
   // Process each row
@@ -153,8 +153,8 @@ export const processSingleEmailCSV = async (
   companyColumn: string,
   onProgress: (processed: number, total: number, stage: string) => void
 ): Promise<CSVData> => {
-  // Create a copy of the data to avoid modifying the original
-  let result: CSVData = [...data];
+  // Create a deep copy of the data to avoid modifying the original
+  let result: CSVData = JSON.parse(JSON.stringify(data));
   const totalRows = data.length;
   
   // Stage 1: Extract domains and clean data
@@ -229,9 +229,9 @@ export const processSingleEmailCSV = async (
               `${alternativeRow['first_name']} ${alternativeRow['last_name']}` : ''));
         
         // Assign alternative contact info
-        currentRow['other_dm_name'] = altFullName;
+        currentRow['other_dm_name'] = altFullName || '';
         currentRow['other_dm_email'] = alternativeRow[emailColumn] || '';
-        currentRow['other_dm_title'] = alternativeRow['title'] || '';
+        currentRow['other_dm_title'] = alternativeRow['title'] || alternativeRow['Title'] || '';
       }
     } else {
       // No alternative contacts for sole domain representatives
@@ -319,8 +319,7 @@ const logDomainFrequencyStats = (domainCounts: Record<string, number>, threshold
   
   // Summary statistics
   if (exceededDomains.length > 0) {
-    // Fix: Use explicit number type and initial value 0
-    const totalExcessRows = exceededDomains.reduce((sum, [_, count]) => sum + count, 0);
+    const totalExcessRows = exceededDomains.reduce<number>((sum, [_, count]) => sum + count, 0);
     console.log(`Total rows with domains exceeding threshold: ${totalExcessRows}`);
   }
   

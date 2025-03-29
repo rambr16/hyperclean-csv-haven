@@ -26,7 +26,9 @@ const DataPreview: React.FC<DataPreviewProps> = ({ data, fileName }) => {
     return data.map(row => ({
       ...row,
       // Ensure other_dm_name exists in every row
-      other_dm_name: row.other_dm_name !== undefined ? row.other_dm_name : ''
+      other_dm_name: row.other_dm_name !== undefined ? row.other_dm_name : '',
+      other_dm_email: row.other_dm_email !== undefined ? row.other_dm_email : '',
+      other_dm_title: row.other_dm_title !== undefined ? row.other_dm_title : '',
     }));
   }, [data]);
   
