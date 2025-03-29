@@ -362,7 +362,7 @@ const logDomainFrequencyStats = (domainCounts: Record<string, number>, threshold
   
   // Summary statistics
   if (exceededDomains.length > 0) {
-    const totalExcessRows = exceededDomains.reduce((sum, [count]) => sum + count, 0);
+    const totalExcessRows = exceededDomains.reduce((sum, [_, count]) => sum + count, 0);
     console.log(`Total rows with domains exceeding threshold: ${totalExcessRows}`);
   }
   
