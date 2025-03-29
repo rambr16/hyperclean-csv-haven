@@ -1,3 +1,4 @@
+
 import { toast } from 'sonner';
 import { getDomainFromEmail, isGenericEmail } from './auth';
 
@@ -34,7 +35,12 @@ export const excludedColumns = [
   'located_google_id', 'website_title', 'website_generator', 'website_description',
   'website_keywords', 'website_has_fb_pixel', 'website_has_google_tag', 'tiktok',
   'medium', 'reddit', 'skype', 'snapchat', 'telegram', 'whatsapp', 'twitter',
-  'vimeo', 'youtube', 'github', 'crunchbase', 'instagram', 'facebook'
+  'vimeo', 'youtube', 'github', 'crunchbase', 'instagram', 'facebook',
+  // Adding new columns to exclude
+  'latitude', 'longitude', 'h3', 'time_zone', 'plus_code', 'area_service',
+  'seniority', 'function', 'key', 'id', 'company id', 'headline', 
+  'company twitter', 'company facebook', 'alexa ranking', 'keywords',
+  'industries', 'secondary industries', 'company postal code', 'company founded year'
 ];
 
 /**
