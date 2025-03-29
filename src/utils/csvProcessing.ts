@@ -414,6 +414,22 @@ export const processDomainOnlyCSV = async (
 };
 
 /**
+ * Enhanced debug function to track data loss at each step
+ */
+const logDataLossStats = (stage: string, originalCount: number, currentCount: number) => {
+  const lossCount = originalCount - currentCount;
+  const lossPercentage = ((lossCount / originalCount) * 100).toFixed(2);
+  
+  console.log(`========== DATA LOSS TRACKING ==========`);
+  console.log(`Stage: ${stage}`);
+  console.log(`Original count: ${originalCount}`);
+  console.log(`Current count: ${currentCount}`);
+  console.log(`Removed: ${lossCount} rows (${lossPercentage}%)`);
+  console.log(`Remaining: ${currentCount} rows (${(100 - parseFloat(lossPercentage)).toFixed(2)}%)`);
+  console.log(`========================================`);
+};
+
+/**
  * Process single email CSV - with improved other_dm_name enrichment and data loss fixes
  */
 export const processSingleEmailCSV = async (
@@ -438,13 +454,23 @@ export const processSingleEmailCSV = async (
     return email !== '' && email.includes('@'); // Basic validation
   });
   
+  // Log data loss after email filtering
+  logDataLossStats("Empty/invalid email filtering", originalRowCount, filteredData.length);
   console.log(`After removing empty emails: ${filteredData.length} rows (removed ${data.length - filteredData.length} rows)`);
   
   // Then deduplicate emails - with improved logic to keep more data
   const uniqueEmails = new Map<string, CSVRow>();
+  const duplicateEmails = new Set<string>();
+  let duplicateCount = 0;
   
   filteredData.forEach((row, index) => {
     const email = row[emailField].toLowerCase().trim();
+    
+    // Track if this is a duplicate
+    if (uniqueEmails.has(email)) {
+      duplicateEmails.add(email);
+      duplicateCount++;
+    }
     
     // Keep the row with more data when duplicates are found
     if (!uniqueEmails.has(email) || 
@@ -459,7 +485,11 @@ export const processSingleEmailCSV = async (
     }
   });
   
+  // Log duplicate stats
+  console.log(`Found ${duplicateEmails.size} unique email addresses with duplicates (total duplicates: ${duplicateCount})`);
+  
   let uniqueEmailData: CSVData = Array.from(uniqueEmails.values());
+  logDataLossStats("Email deduplication", filteredData.length, uniqueEmailData.length);
   console.log(`After deduplication: ${uniqueEmailData.length} unique emails (removed ${filteredData.length - uniqueEmailData.length} duplicates)`);
   updateProgress(uniqueEmailData.length, originalRowCount, 'Removed duplicate emails');
   
@@ -524,11 +554,34 @@ export const processSingleEmailCSV = async (
   console.log(`Domain frequency debugging - BEFORE filtering (threshold: ${DOMAIN_FREQUENCY_THRESHOLD})`);
   logDomainFrequencyStats(domainCounts, DOMAIN_FREQUENCY_THRESHOLD);
   
-  // Then filter out domains with more than DOMAIN_FREQUENCY_THRESHOLD occurrences
-  const filteredByDomain = processedData.filter(row => {
-    const domain = row['cleaned_website'];
-    return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
+  // Calculate how many rows would be affected by domain frequency filtering
+  const domainsExceedingThreshold = Object.entries(domainCounts)
+    .filter(([_, count]) => count > DOMAIN_FREQUENCY_THRESHOLD);
+  
+  let totalRowsAffectedByDomainFiltering = 0;
+  domainsExceedingThreshold.forEach(([domain, count]) => {
+    totalRowsAffectedByDomainFiltering += count;
   });
+  
+  console.log(`Domain filtering would remove ${totalRowsAffectedByDomainFiltering} rows (${((totalRowsAffectedByDomainFiltering/processedData.length)*100).toFixed(2)}% of data)`);
+  
+  // IMPORTANT CHANGE: Disable the domain frequency filter if it would remove more than 50% of data
+  let filteredByDomain;
+  const domainFilteringPercentage = (totalRowsAffectedByDomainFiltering / processedData.length) * 100;
+  
+  if (domainFilteringPercentage > 50) {
+    console.log(`!!!! DOMAIN FILTERING DISABLED - would remove ${domainFilteringPercentage.toFixed(2)}% of data !!!!`);
+    filteredByDomain = processedData; // Skip filtering
+  } else {
+    // Then filter out domains with more than DOMAIN_FREQUENCY_THRESHOLD occurrences
+    filteredByDomain = processedData.filter(row => {
+      const domain = row['cleaned_website'];
+      return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
+    });
+  }
+  
+  // Log data loss after domain filtering
+  logDataLossStats("Domain frequency filtering", processedData.length, filteredByDomain.length);
   
   // DEBUG: Verify the filtering worked by counting domains again
   const postFilterDomainCounts: Record<string, number> = {};
@@ -636,6 +689,9 @@ export const processSingleEmailCSV = async (
   
   console.log(`Successfully enriched ${enrichedCount} rows with other_dm_name`);
   
+  // Log final data loss summary
+  logDataLossStats("Final processing result", originalRowCount, filteredByDomain.length);
+  
   updateProgress(filteredByDomain.length, filteredByDomain.length, 'Complete');
   console.log(`Single-email processing complete: ${filteredByDomain.length} rows in final output (from ${originalRowCount} original rows)`);
   
@@ -660,6 +716,7 @@ export const processMultiEmailCSV = async (
   // Reorganize data to ensure each email has associated metadata
   let expandedData: CSVData = [];
   let totalEmailsFound = 0;
+  let skippedEmails = 0;
   
   // First expand the data to have one row per email, preserving all metadata
   data.forEach((row, idx) => {
@@ -675,10 +732,20 @@ export const processMultiEmailCSV = async (
       originalRow: CSVRow
     }> = [];
     
+    // Track valid emails found in this row
+    let validEmailsInRow = 0;
+    
     // Gather all valid emails and their associated data
     emailColumns.forEach(emailCol => {
       const email = (row[mappedColumns[emailCol]] || '').trim();
-      if (!email || !email.includes('@')) return; // Skip invalid emails
+      
+      // Track emails that are skipped
+      if (!email || !email.includes('@')) {
+        skippedEmails++;
+        return; // Skip invalid emails
+      }
+      
+      validEmailsInRow++;
       
       // Extract the prefix (e.g., "email_1" from "email_1")
       const prefix = emailCol;
@@ -759,7 +826,8 @@ export const processMultiEmailCSV = async (
     }
   });
   
-  console.log(`Expanded to ${expandedData.length} email rows (total emails found: ${totalEmailsFound})`);
+  console.log(`Expanded to ${expandedData.length} email rows (total emails found: ${totalEmailsFound}, skipped: ${skippedEmails})`);
+  logDataLossStats("Email expansion (multi-email process)", originalRowCount, expandedData.length);
   
   if (expandedData.length === 0) {
     console.log("No valid emails found in the multi-email CSV");
@@ -825,11 +893,33 @@ export const processMultiEmailCSV = async (
   console.log(`Domain frequency debugging - BEFORE filtering (threshold: ${DOMAIN_FREQUENCY_THRESHOLD})`);
   logDomainFrequencyStats(domainCounts, DOMAIN_FREQUENCY_THRESHOLD);
   
-  // Filter by domain threshold
-  const filteredByDomain = processedData.filter(row => {
-    const domain = row['cleaned_website'];
-    return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
+  // Calculate how many rows would be affected by domain frequency filtering
+  const domainsExceedingThreshold = Object.entries(domainCounts)
+    .filter(([_, count]) => count > DOMAIN_FREQUENCY_THRESHOLD);
+  
+  let totalRowsAffectedByDomainFiltering = 0;
+  domainsExceedingThreshold.forEach(([domain, count]) => {
+    totalRowsAffectedByDomainFiltering += count;
   });
+  
+  console.log(`Domain filtering would remove ${totalRowsAffectedByDomainFiltering} rows (${((totalRowsAffectedByDomainFiltering/processedData.length)*100).toFixed(2)}% of data)`);
+  
+  // IMPORTANT CHANGE: Disable the domain frequency filter if it would remove more than 50% of data
+  let filteredByDomain;
+  const domainFilteringPercentage = (totalRowsAffectedByDomainFiltering / processedData.length) * 100;
+  
+  if (domainFilteringPercentage > 50) {
+    console.log(`!!!! DOMAIN FILTERING DISABLED - would remove ${domainFilteringPercentage.toFixed(2)}% of data !!!!`);
+    filteredByDomain = processedData; // Skip filtering
+  } else {
+    // Filter by domain threshold
+    filteredByDomain = processedData.filter(row => {
+      const domain = row['cleaned_website'];
+      return !domain || domainCounts[domain] <= DOMAIN_FREQUENCY_THRESHOLD;
+    });
+  }
+  
+  logDataLossStats("Domain frequency filtering (multi-email)", processedData.length, filteredByDomain.length);
   
   // DEBUG: Verify the filtering worked by counting domains again
   const postFilterDomainCounts: Record<string, number> = {};
@@ -949,6 +1039,9 @@ export const processMultiEmailCSV = async (
     if (row['other_dm_email'] === undefined) row['other_dm_email'] = '';
     if (row['other_dm_title'] === undefined) row['other_dm_title'] = '';
   });
+  
+  // Log final data loss summary
+  logDataLossStats("Final processing result (multi-email)", originalRowCount, filteredByDomain.length);
   
   updateProgress(filteredByDomain.length, filteredByDomain.length, 'Complete');
   console.log(`Multi-email processing complete: ${filteredByDomain.length} rows in final output (from ${originalRowCount} original rows)`);

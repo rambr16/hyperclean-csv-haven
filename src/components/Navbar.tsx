@@ -2,7 +2,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
-import { LogOut, RefreshCw, ExternalLink } from 'lucide-react';
+import { LogOut, RefreshCw, ExternalLink, Info } from 'lucide-react';
 
 interface NavbarProps {
   onReset: () => void;
@@ -15,6 +15,10 @@ const Navbar: React.FC<NavbarProps> = ({ onReset }) => {
     window.open('https://splitcsv.netlify.app', '_blank', 'noopener,noreferrer');
   };
   
+  const handleOpenDocs = () => {
+    window.open('https://hyperke-docs.notion.site/CSV-Cleaner-Documentation-f64b0fe8ef8e4ac6a5bea6c98db4878c', '_blank', 'noopener,noreferrer');
+  };
+  
   return (
     <div className="w-full bg-white/80 backdrop-blur-md border-b border-gray-200 fixed top-0 z-50 py-3 px-6 shadow-sm">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -25,6 +29,16 @@ const Navbar: React.FC<NavbarProps> = ({ onReset }) => {
         </div>
         
         <div className="flex items-center space-x-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="text-gray-600 hover:text-hyperke-blue hover:border-hyperke-blue transition-colors"
+            onClick={handleOpenDocs}
+          >
+            <Info className="h-4 w-4 mr-2" />
+            Docs
+          </Button>
+          
           <Button 
             variant="outline" 
             size="sm" 
